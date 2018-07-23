@@ -11,3 +11,8 @@ take a look at [Inspackage](https://ac-pm.github.io/Inspeckage/) since this will
 for this purpose.
 
 The License is GPL-3.0-or-later
+
+## ATENTION
+Never leave this Module enabled or installed on day to day use.
+__THIS IS A SECURETY RISK__. Only enable this for Development.
+
