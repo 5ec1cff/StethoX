@@ -1,6 +1,8 @@
 StethoX
 =======
 
+Original Project: https://gitlab.com/derSchabi/Stethox
+
 This is a [Xposed](http://repo.xposed.info/module/de.robv.android.xposed.installer) Module that enables 
 [Statho](https://facebook.github.io/stetho/) for every application on your phone. All Stetho functions
 are given besides Network Monitoring. For this however I highly recommend using [mitmproxy](https://mitmproxy.org/)
