@@ -1,1 +1,0 @@
-Xposed moduel that adds Stetho to every app.
