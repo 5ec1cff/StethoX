@@ -5,20 +5,19 @@ buildscript {
         mavenCentral()
     }
     dependencies {
-        classpath 'com.android.tools.build:gradle:7.4.2'
+        classpath("com.android.tools.build:gradle:7.4.2")
     }
 }
 
 allprojects {
     repositories {
+        mavenLocal()
         google()
         mavenCentral()
-        maven {
-            url "https://api.xposed.info/"
-        }
+        maven("https://api.xposed.info/")
     }
 }
 
-task clean(type: Delete) {
-    delete rootProject.buildDir
+task("clean", type = Delete::class) {
+    delete(rootProject.buildDir)
 }
