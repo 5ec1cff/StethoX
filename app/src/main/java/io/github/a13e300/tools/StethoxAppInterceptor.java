@@ -1,4 +1,4 @@
-package org.schabi.stethox;
+package io.github.a13e300.tools;
 
 import android.app.Application;
 
@@ -10,13 +10,12 @@ import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.callbacks.XC_LoadPackage;
 import static de.robv.android.xposed.XposedHelpers.findAndHookMethod;
 
-
 public class StethoxAppInterceptor implements IXposedHookLoadPackage {
     public static final String TAG = "Stethox: ";
 
 
     public void handleLoadPackage(final XC_LoadPackage.LoadPackageParam lpparam) throws Throwable {
-        if(lpparam.packageName.equals("org.schabi.stethox"))
+        if(lpparam.packageName.equals(BuildConfig.APPLICATION_ID))
             return;
 
         // install Stetho
