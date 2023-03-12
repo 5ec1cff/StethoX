@@ -24,6 +24,6 @@ android {
 
 dependencies {
     compileOnly("de.robv.android.xposed:api:82")
-    implementation("io.github.a13e300.stetho:stetho:2.0")
-    implementation("io.github.a13e300.stetho:stetho-js-rhino:2.0")
+    implementation("com.github.5ec1cff.stetho:stetho:1.0-alpha")
+    implementation("com.github.5ec1cff.stetho:stetho-js-rhino:1.0-alpha")
 }
