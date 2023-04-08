@@ -1,20 +1,56 @@
 StethoX
 =======
 
+## Description
+
 Original Project: https://gitlab.com/derSchabi/Stethox
 
-This is a [Xposed](http://repo.xposed.info/module/de.robv.android.xposed.installer) Module that enables 
-[Stetho](https://facebook.github.io/stetho/) for every application on your phone. All Stetho functions
-are given besides Network Monitoring. For this however I highly recommend using [mitmproxy](https://mitmproxy.org/)
-or [tcpdump](http://www.tcpdump.org/) and [Wireshark](https://www.wireshark.org/).
+This is a [Xposed](http://repo.xposed.info/module/de.robv.android.xposed.installer) Module 
+that enables [Stetho](https://github.com/5ec1cff/stetho) ([origin](https://facebook.github.io/stetho/)) for every application on your phone,
+allows you inspect any application with Chrome Remote Devtools.
 
-This Module can be used for Reverse Engineering. Especially the Layout Preview is very useful. Please also
-take a look at [Inspackage](https://ac-pm.github.io/Inspeckage/) since this will add even more functions
-for this purpose.
+## Usage
+
+1. Install Xposed and this module.  
+2. Enable this module for apps you need.  
+3. Connect to your PC via USB Debugging (ADB).  
+4. Open chrome://inspect , select your app to inspect.  
+5. Have fun !  
+
+## Features
+
+- Inspect view as DOM  
+- Access Java code with Rhino Javascript REPL in console  
 
 The License is GPL-3.0-or-later
 
-## ATENTION
-Never leave this Module enabled or installed on day to day use.
-__THIS IS A SECURETY RISK__. Only enable this for Development.
+## ATTENTION
 
+Never leave this Module enabled or installed on day to day use.
+__THIS IS A SECURITY RISK__. Only enable this for Development.
+
+---
+
+## 描述
+
+原项目： https://gitlab.com/derSchabi/Stethox
+
+这是一个能够为任意应用启用 [Stetho](https://github.com/5ec1cff/stetho) ([原 facebook 项目](https://facebook.github.io/stetho/))
+的 [Xposed](http://repo.xposed.info/module/de.robv.android.xposed.installer) 模块，你可以借助它通过 Chrome 开发者工具调试任意 App 。 
+
+## 用法
+
+1. 安装 Xposed 及该模块。  
+2. 为你需要的应用启用模块。  
+3. 通过 USB 调试 (ADB) 连接到电脑。  
+4. 打开 chrome://inspect ，选择要调试的 App 。  
+5. 祝你玩得开心！  
+
+## 功能
+
+- 像审查元素一样查看 view 。  
+- 在控制台使用交互式 Rhino Javascript shell 访问 Java 代码。   
+
+## 注意
+
+日常使用请勿启用该模块，这样有安全风险，请只在开发时启用。
