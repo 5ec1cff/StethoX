@@ -1,12 +1,32 @@
 @file:Suppress("UnstableApiUsage")
 
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     id("com.android.application")
 }
 
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = if (keystorePropertiesFile.exists() && keystorePropertiesFile.isFile) {
+    Properties().apply {
+        load(FileInputStream(keystorePropertiesFile))
+    }
+} else null
+
 android {
     namespace = "io.github.a13e300.tools"
     compileSdk = 33
+    signingConfigs {
+        if (keystoreProperties != null) {
+            create("release") {
+                keyAlias = keystoreProperties["keyAlias"] as String
+                keyPassword = keystoreProperties["keyPassword"] as String
+                storeFile = file(keystoreProperties["storeFile"] as String)
+                storePassword = keystoreProperties["storePassword"] as String
+            }
+        }
+    }
     defaultConfig {
         applicationId = "io.github.a13e300.tools.stethox"
         minSdk = 24
@@ -16,8 +36,10 @@ android {
     }
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs["debug"]
         }
     }
     compileOptions {
@@ -30,5 +52,5 @@ dependencies {
     compileOnly("de.robv.android.xposed:api:82")
     implementation("com.github.5ec1cff.stetho:stetho:1.0-alpha")
     implementation("com.github.5ec1cff.stetho:stetho-js-rhino:1.0-alpha")
-    implementation("org.mozilla:rhino")
+    implementation("org.mozilla:rhino:1.7.13")
 }
