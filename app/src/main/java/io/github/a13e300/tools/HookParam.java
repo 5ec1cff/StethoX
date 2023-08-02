@@ -38,13 +38,11 @@ public class HookParam extends ScriptableObject {
         Object mOriginalResult;
         try {
             mOriginalResult = XposedBridge.invokeOriginalMethod(mParam.method, mParam.thisObject, mParam.args);
-            if (!mInvoked) {
-                mParam.setResult(mOriginalResult);
-            }
+            if (!mInvoked) mParam.setResult(mOriginalResult);
         } catch (Throwable t) {
             var realT = t;
             if (realT instanceof InvocationTargetException) realT = ((InvocationTargetException) realT).getTargetException();
-            mParam.setThrowable(realT);
+            if (!mInvoked) mParam.setThrowable(realT);
             throw realT;
         } finally {
             mInvoked = true;
@@ -74,7 +72,9 @@ public class HookParam extends ScriptableObject {
 
     @JSSetter
     public static void setResult(Scriptable thisObj, Object value) {
-        ((HookParam) thisObj).mParam.setResult(value);
+        var p = (HookParam) thisObj;
+        p.mParam.setResult(value);
+        p.mInvoked = true;
     }
 
     @JSGetter
@@ -84,7 +84,9 @@ public class HookParam extends ScriptableObject {
 
     @JSSetter
     public static void setThrowable(Scriptable thisObj, Throwable value) {
-        ((HookParam) thisObj).mParam.setThrowable(value);
+        var p = (HookParam) thisObj;
+        p.mParam.setThrowable(value);
+        p.mInvoked = true;
     }
 
     @JSGetter

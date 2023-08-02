@@ -11,6 +11,7 @@ import org.mozilla.javascript.Function;
 import org.mozilla.javascript.NativeJavaClass;
 import org.mozilla.javascript.ScriptRuntime;
 import org.mozilla.javascript.Scriptable;
+import org.mozilla.javascript.Wrapper;
 import org.mozilla.javascript.annotations.JSFunction;
 
 import java.lang.reflect.Constructor;
@@ -145,7 +146,7 @@ public class HookFunction extends BaseFunction {
                 try {
                     callback.call(context, scope, null, new Object[]{p});
                 } catch (Throwable t) {
-                    JsConsole.fromScope(scope).info(t);
+                    JsConsole.fromScope(scope).error("error occurred in hook of " + param.method, t);
                 } finally {
                     Context.exit();
                 }
@@ -161,7 +162,7 @@ public class HookFunction extends BaseFunction {
         hookMembers.forEach((member) -> {
             var oldHook = mHooks.get(member);
             if (oldHook != null) {
-                console.log("remove old hook for", member);
+                console.log("remove old hook of", member);
                 oldHook.unhook();
             }
             var unhook = XposedBridge.hookMethod(member, methodHook);
@@ -187,8 +188,48 @@ public class HookFunction extends BaseFunction {
 
     @Override
     public String toString() {
-        return "hook on " + getClassLoader();
+        return "Use hook.help() for help";
     }
+
+    synchronized void stat() {
+        var sb = new StringBuilder("current classLoader").append(getClassLoader()).append("\nHooked methods:");
+        for (var key: mHooks.keySet()) {
+            sb.append("\n");
+            sb.append(key);
+        }
+        JsConsole.fromScope(getParentScope()).log(sb.toString());
+    }
+
+    synchronized void setClassLoader(ClassLoader cl) {
+        mClassLoader = cl;
+    }
+
+    private static final String HELP = "hook([<class>] <method> <callback>) -> Unhook\n"
+            + "  Class:\n"
+            + "    hook(classLoader, className, ...)\n"
+            + "    hook(className, ...)\n use default classLoader (first app classloader, use hook.setClassLoader to change)\n"
+            + "    hook(java.lang.Class.forName(...), ...) or hook(Rhino NativeJavaClass, ...)\n"
+            + "  Method:\n"
+            + "    hook(<class>, methodName[, method argument types ...])\n"
+            + "    if no argument types specified, means hook all methods named methodName\n"
+            + "    or hook(MethodObject, ...)\n"
+            + "  Callback:\n    hook(..., Callback function)\n"
+            + "    Callback function is called before original method invoked,\n"
+            + "    with a HookParam object. Return value and exception are ignored (exceptions are logged).\n"
+            + "    You must use HookParam to modify the arguments and result of the invocation\n"
+            + "  HookParam:\n    .method Readonly\n    .thisObject Readonly\n    .args\n    .result\n    .throwable\n"
+            + "    .invoke() - invoke the original method (args from HookParam)\n"
+            + "    if invoke() is not called during the callback, the original\n"
+            + "    method is automatically invoked after the callback\n"
+            + "    except result or throwable of the HookParam is set.\n"
+            + "  Unhook:\n"
+            + "    A call to hook() return an unhook object, call .unhook() to unhook all methods\n"
+            + "    If you want to hook a hooked method, the previous hook will be unhook.\n"
+            + "    You can also call hook.clearHooks() to clear all hooks, call hook.stat() to print all hooks.\n"
+            + "    When you disconnected from the console, all hooks are automatically removed\n"
+            + "  Utils:\n"
+            + "    getStackTrace()\n"
+            + "    printStackTrace()\n";
 
     @JSFunction
     public static String toString(Context cx, Scriptable thisObj, Object[] args, Function funObj) {
@@ -198,6 +239,27 @@ public class HookFunction extends BaseFunction {
     @JSFunction
     public static void clearHooks(Context cx, Scriptable thisObj, Object[] args, Function funObj) {
         ((HookFunction) thisObj).clearHooks();
+    }
+
+    @JSFunction
+    public static void stat(Context cx, Scriptable thisObj, Object[] args, Function funObj) {
+        ((HookFunction) thisObj).stat();
+    }
+
+    @JSFunction
+    public static void setClassLoader(Context cx, Scriptable thisObj, Object[] args, Function funObj) {
+        if (args.length != 1) throw new IllegalArgumentException("classLoader required!");
+        var cl = args[0];
+        if (cl instanceof Wrapper) {
+            cl = ((Wrapper) cl).unwrap();
+        }
+        if (!(cl instanceof ClassLoader)) throw new IllegalArgumentException("invalid argument");
+        ((HookFunction) thisObj).setClassLoader((ClassLoader) cl);
+    }
+
+    @JSFunction
+    public static void help(Context cx, Scriptable thisObj, Object[] args, Function funObj) {
+        JsConsole.fromScope(thisObj.getParentScope()).log(HELP);
     }
 
     static Context enterJsContext() {

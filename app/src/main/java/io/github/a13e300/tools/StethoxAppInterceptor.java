@@ -24,6 +24,8 @@ public class StethoxAppInterceptor implements IXposedHookLoadPackage {
                 .enableWebKitInspector(
                         () -> new Stetho.DefaultInspectorModulesBuilder(context).runtimeRepl(
                                 new JsRuntimeReplFactoryBuilder(context)
+                                        .addFunction("getStackTrace", new GetStackTraceFunction())
+                                        .addFunction("printStackTrace", new PrintStackTraceFunction())
                                         .onInitScope(scope -> {
                                             try {
                                                 scope.defineProperty("activities", null, Utils.class.getDeclaredMethod("getActivities", ScriptableObject.class), null, ScriptableObject.READONLY);
