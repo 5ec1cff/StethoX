@@ -1,10 +1,12 @@
-package io.github.a13e300.tools;
+package io.github.a13e300.tools.objects;
 
 import com.facebook.stetho.rhino.JsConsole;
 
 import org.mozilla.javascript.BaseFunction;
 import org.mozilla.javascript.Context;
 import org.mozilla.javascript.Scriptable;
+
+import io.github.a13e300.tools.Utils;
 
 public class PrintStackTraceFunction extends BaseFunction {
     @Override

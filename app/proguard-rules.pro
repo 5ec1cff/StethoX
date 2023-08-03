@@ -44,3 +44,5 @@
 -keep class org.mozilla.javascript.v8dtoa.** { *; }
 -keep class org.mozilla.javascript.xml.** { *; }
 -keep class org.mozilla.javascript.xmlimpl.** { *; }
+
+-keep class io.github.a13e300.tools.objects.** { *; }

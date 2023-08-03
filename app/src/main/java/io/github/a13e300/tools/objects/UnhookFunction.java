@@ -1,4 +1,4 @@
-package io.github.a13e300.tools;
+package io.github.a13e300.tools.objects;
 
 import org.mozilla.javascript.Context;
 import org.mozilla.javascript.Function;

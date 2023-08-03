@@ -15,6 +15,11 @@ import de.robv.android.xposed.IXposedHookLoadPackage;
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.callbacks.XC_LoadPackage;
+import io.github.a13e300.tools.objects.GetStackTraceFunction;
+import io.github.a13e300.tools.objects.HookFunction;
+import io.github.a13e300.tools.objects.HookParam;
+import io.github.a13e300.tools.objects.PrintStackTraceFunction;
+import io.github.a13e300.tools.objects.UnhookFunction;
 
 public class StethoxAppInterceptor implements IXposedHookLoadPackage {
     public static final String TAG = "Stethox: ";
