@@ -31,8 +31,8 @@ android {
         applicationId = "io.github.a13e300.tools.stethox"
         minSdk = 24
         targetSdk = 33
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.0.1"
     }
     buildTypes {
         release {
@@ -50,7 +50,7 @@ android {
 
 dependencies {
     compileOnly("de.robv.android.xposed:api:82")
-    implementation("com.github.5ec1cff.stetho:stetho:1.0-alpha")
-    implementation("com.github.5ec1cff.stetho:stetho-js-rhino:1.0-alpha")
+    implementation("com.github.5ec1cff.stetho:stetho:1.0-alpha-1")
+    implementation("com.github.5ec1cff.stetho:stetho-js-rhino:1.0-alpha-1")
     implementation("org.mozilla:rhino:1.7.13")
 }
