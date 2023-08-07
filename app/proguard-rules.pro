@@ -20,6 +20,7 @@
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
 -keep class io.github.a13e300.tools.StethoxAppInterceptor
+-keep class io.github.a13e300.tools.NativeUtils { *; }
 # stetho
 -keep class com.facebook.stetho.** { *; }
 

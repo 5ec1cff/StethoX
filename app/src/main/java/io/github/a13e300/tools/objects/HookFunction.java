@@ -26,6 +26,7 @@ import java.util.stream.Collectors;
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XC_MethodReplacement;
 import de.robv.android.xposed.XposedBridge;
+import io.github.a13e300.tools.NativeUtils;
 
 public class HookFunction extends BaseFunction {
     private ClassLoader mClassLoader;
@@ -260,6 +261,15 @@ public class HookFunction extends BaseFunction {
     @JSFunction
     public static void help(Context cx, Scriptable thisObj, Object[] args, Function funObj) {
         JsConsole.fromScope(thisObj.getParentScope()).log(HELP);
+    }
+
+    @JSFunction
+    public static void enumerateClassLoader(Context cx, Scriptable thisObj, Object[] args, Function funObj) {
+        if (args.length != 1 || !(args[0] instanceof Function)) throw new IllegalArgumentException("");
+        var fun = (Function) args[0];
+        NativeUtils.enumerateClassLoader((e) -> {
+            fun.call(cx, thisObj.getParentScope(), null, new Object[]{e});
+        });
     }
 
     static Context enterJsContext() {
