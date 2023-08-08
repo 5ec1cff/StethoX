@@ -23,8 +23,10 @@ import io.github.a13e300.tools.objects.UnhookFunction;
 
 public class StethoxAppInterceptor implements IXposedHookLoadPackage {
     public static final String TAG = "Stethox: ";
+    private boolean initialized = false;
 
-    private void initializeStetho(Context context) {
+    private synchronized void initializeStetho(Context context) {
+        if (initialized) return;
         Stetho.initialize(Stetho.newInitializerBuilder(context)
                 .enableWebKitInspector(
                         () -> new Stetho.DefaultInspectorModulesBuilder(context).runtimeRepl(
@@ -53,6 +55,7 @@ public class StethoxAppInterceptor implements IXposedHookLoadPackage {
                         ).finish()
                 ).build()
         );
+        initialized = true;
     }
 
 
