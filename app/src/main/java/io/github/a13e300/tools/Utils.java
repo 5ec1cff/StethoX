@@ -1,6 +1,7 @@
 package io.github.a13e300.tools;
 
 import android.app.Activity;
+import android.app.ActivityThread;
 
 import org.mozilla.javascript.ScriptableObject;
 
@@ -9,11 +10,16 @@ import java.util.Map;
 import de.robv.android.xposed.XposedHelpers;
 
 public class Utils {
-    public static Object getActivityThread() {
-        return XposedHelpers.callStaticMethod(
-                XposedHelpers.findClass("android.app.ActivityThread", Utils.class.getClassLoader()),
-                "currentActivityThread"
-        );
+    public static ActivityThread getActivityThread() {
+        return ActivityThread.currentActivityThread();
+    }
+
+    public static String getProcessName() {
+        try {
+            return getActivityThread().getProcessName();
+        } catch (NullPointerException e) {
+            return null;
+        }
     }
 
     public static Activity[] getActivities(ScriptableObject ignore) {

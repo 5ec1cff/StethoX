@@ -6,6 +6,12 @@
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true">
+        <provider
+            android:name=".SuspendProvider"
+            android:authorities="io.github.a13e300.tools.stethox.suspend"
+            android:enabled="true"
+            android:exported="true"/>
+
         <meta-data
             android:name="xposedmodule"
             android:value="true" />
