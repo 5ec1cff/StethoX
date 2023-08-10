@@ -8,7 +8,6 @@ import com.facebook.stetho.rhino.JsConsole;
 import org.mozilla.javascript.BaseFunction;
 import org.mozilla.javascript.Context;
 import org.mozilla.javascript.Function;
-import org.mozilla.javascript.NativeJavaClass;
 import org.mozilla.javascript.ScriptRuntime;
 import org.mozilla.javascript.Scriptable;
 import org.mozilla.javascript.Wrapper;
@@ -29,6 +28,10 @@ import de.robv.android.xposed.XposedBridge;
 import io.github.a13e300.tools.NativeUtils;
 
 public class HookFunction extends BaseFunction {
+    /**
+     * The classloader of the context
+     * DO NOT USE DIRECTLY, use getClassLoader() instead
+     */
     private ClassLoader mClassLoader;
 
     private final ConcurrentHashMap<Member, XC_MethodHook.Unhook> mHooks = new ConcurrentHashMap<>();
@@ -60,14 +63,13 @@ public class HookFunction extends BaseFunction {
     public Object call(Context cx, Scriptable scope, Scriptable thisObj, Object[] args) {
         if (args.length == 0) return null;
         var first = args[0];
+        if (first instanceof Wrapper) first = ((Wrapper) first).unwrap();
         Class<?> hookClass = null;
         List<Member> hookMembers = null;
         Function callback;
         int pos = 0;
         if (first instanceof Class) {
             hookClass = (Class<?>) first;
-        } else if (first instanceof NativeJavaClass) {
-            hookClass = ((NativeJavaClass) first).getClassObject();
         } else if (first instanceof ClassLoader) {
             if (args.length >= 2 && args[1] instanceof String) {
                 pos++;
@@ -81,7 +83,7 @@ public class HookFunction extends BaseFunction {
             }
         } else if (first instanceof String) {
             try {
-                getClassLoader().loadClass((String) first);
+                hookClass = getClassLoader().loadClass((String) first);
             } catch (ClassNotFoundException e) {
                 throw new RuntimeException(e);
             }
@@ -134,7 +136,7 @@ public class HookFunction extends BaseFunction {
             }
         }
         if (hookMembers == null) {
-            throw new IllegalArgumentException("invalid input");
+            throw new IllegalArgumentException("cannot find members");
         }
         if (!(args[args.length - 1] instanceof Function)) throw new IllegalArgumentException("callback is required");
         callback = (Function) args[args.length - 1];
@@ -192,6 +194,20 @@ public class HookFunction extends BaseFunction {
         return "Use hook.help() for help";
     }
 
+    Class<?> findClass(Object[] args) throws ClassNotFoundException {
+        if (args.length >= 1 && args[0] instanceof String) {
+            ClassLoader cl = getClassLoader();
+            if (args.length == 2){
+                var arg1 = args[1] instanceof Wrapper ? ((Wrapper) args[1]).unwrap() : args[1];
+                if (!(arg1 instanceof ClassLoader)) throw new IllegalArgumentException("arg1 must be null or a classloader");
+                cl = (ClassLoader) arg1;
+            }
+            return Class.forName((String) args[0], false, cl);
+        } else {
+            throw new IllegalArgumentException("arg0 must be a string");
+        }
+    }
+
     synchronized void stat() {
         var sb = new StringBuilder("current classLoader").append(getClassLoader()).append("\nHooked methods:");
         for (var key: mHooks.keySet()) {
@@ -226,11 +242,12 @@ public class HookFunction extends BaseFunction {
             + "  Unhook:\n"
             + "    A call to hook() return an unhook object, call .unhook() to unhook all methods\n"
             + "    If you want to hook a hooked method, the previous hook will be unhook.\n"
-            + "    You can also call hook.clearHooks() to clear all hooks, call hook.stat() to print all hooks.\n"
+            + "    You can also call hook.clear() to clear all hooks, call hook.stat() to print all hooks.\n"
             + "    When you disconnected from the console, all hooks are automatically removed\n"
             + "  Utils:\n"
             + "    getStackTrace()\n"
-            + "    printStackTrace()\n";
+            + "    printStackTrace()\n"
+            + "    hook.findClass(String[, Classloader])";
 
     @JSFunction
     public static String toString(Context cx, Scriptable thisObj, Object[] args, Function funObj) {
@@ -238,8 +255,13 @@ public class HookFunction extends BaseFunction {
     }
 
     @JSFunction
-    public static void clearHooks(Context cx, Scriptable thisObj, Object[] args, Function funObj) {
+    public static void clear(Context cx, Scriptable thisObj, Object[] args, Function funObj) {
         ((HookFunction) thisObj).clearHooks();
+    }
+
+    @JSFunction
+    public static Class<?> findClass(Context cx, Scriptable thisObj, Object[] args, Function funObj) throws ClassNotFoundException {
+        return ((HookFunction) thisObj).findClass(args);
     }
 
     @JSFunction
