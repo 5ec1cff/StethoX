@@ -8,6 +8,8 @@ import android.app.IApplicationThread;
 import android.app.Instrumentation;
 import android.content.Context;
 import android.net.Uri;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.ServiceManager;
 
 import com.facebook.stetho.Stetho;
@@ -26,6 +28,7 @@ import io.github.a13e300.tools.objects.GetStackTraceFunction;
 import io.github.a13e300.tools.objects.HookFunction;
 import io.github.a13e300.tools.objects.HookParam;
 import io.github.a13e300.tools.objects.PrintStackTraceFunction;
+import io.github.a13e300.tools.objects.RunOnHandlerFunction;
 import io.github.a13e300.tools.objects.UnhookFunction;
 
 public class StethoxAppInterceptor implements IXposedHookZygoteInit {
@@ -68,6 +71,8 @@ public class StethoxAppInterceptor implements IXposedHookZygoteInit {
                                 new JsRuntimeReplFactoryBuilder(context)
                                         .addFunction("getStackTrace", new GetStackTraceFunction())
                                         .addFunction("printStackTrace", new PrintStackTraceFunction())
+                                        .addFunction("runOnUiThread", new RunOnHandlerFunction(new Handler(Looper.getMainLooper())))
+                                        .addFunction("runOnHandler", new RunOnHandlerFunction())
                                         .onInitScope(scope -> {
                                             try {
                                                 scope.defineProperty("activities", null, Utils.class.getDeclaredMethod("getActivities", ScriptableObject.class), null, ScriptableObject.READONLY);
