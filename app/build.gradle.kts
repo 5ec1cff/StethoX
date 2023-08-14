@@ -27,6 +27,9 @@ android {
             }
         }
     }
+    buildFeatures {
+        buildConfig = true
+    }
     defaultConfig {
         applicationId = "io.github.a13e300.tools.stethox"
         minSdk = 24
