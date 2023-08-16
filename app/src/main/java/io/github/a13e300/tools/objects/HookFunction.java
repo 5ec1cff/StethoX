@@ -250,7 +250,8 @@ public class HookFunction extends BaseFunction {
             + "  Utils:\n"
             + "    getStackTrace()\n"
             + "    printStackTrace()\n"
-            + "    hook.findClass(String[, Classloader])";
+            + "    hook.findClass(String[, Classloader])\n"
+            + "    hook.setClassLoader / getClassLoader";
 
     @JSFunction
     public static String toString(Context cx, Scriptable thisObj, Object[] args, Function funObj) {
@@ -284,6 +285,11 @@ public class HookFunction extends BaseFunction {
     }
 
     @JSFunction
+    public static ClassLoader getClassLoader(Context cx, Scriptable thisObj, Object[] args, Function funObj) {
+        return ((HookFunction) thisObj).getClassLoader();
+    }
+
+    @JSFunction
     public static void help(Context cx, Scriptable thisObj, Object[] args, Function funObj) {
         JsConsole.fromScope(thisObj.getParentScope()).log(HELP);
     }
@@ -296,6 +302,4 @@ public class HookFunction extends BaseFunction {
             fun.call(cx, thisObj.getParentScope(), null, new Object[]{e});
         });
     }
-
-
 }
