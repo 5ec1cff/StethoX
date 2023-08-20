@@ -7,6 +7,7 @@
 #include "art.h"
 #include <functional>
 #include <utility>
+#include <vector>
 
 static jobject newLocalRef(JNIEnv *env, void *object) {
     static jobject (*NewLocalRef)(JNIEnv *, void *) = nullptr;
@@ -87,12 +88,14 @@ public:
     }
 
     void Visit(art::mirror::ClassLoader *class_loader) override {
+        callback_((jobject) class_loader);
+        /*
         jobject object = newLocalRef((JNIEnv *) env_, (jobject) class_loader);
         if (object != nullptr) {
             LOGD("object %p", object);
             callback_(object);
             deleteLocalRef((JNIEnv *) env_, object);
-        }
+        }*/
     }
 
 private:
@@ -100,25 +103,22 @@ private:
     Callback callback_;
 };
 
-void visitClassLoaders(JNIEnv *env, jobject cb) {
-    jclass callbackClass = env->FindClass("io/github/a13e300/tools/ObjectEnumerator");
-    if (env->ExceptionCheck()) {
-#ifdef DEBUG
-        env->ExceptionDescribe();
-#endif
-        env->ExceptionClear();
-    }
-    if (callbackClass == nullptr) {
-        LOGE("callback class is null");
-        return;
-    }
-    auto method = env->GetMethodID(callbackClass, "onEnumerate", "(Ljava/lang/Object;)V");
-
+jobjectArray visitClassLoaders(JNIEnv *env) {
+    jclass class_loader_class = env->FindClass("java/lang/ClassLoader");
+    std::vector<jobject> class_loaders;
     auto callback = [&](jobject o) {
-        env->CallVoidMethod(cb, method, o);
+        auto r = newLocalRef(env, o);
+        class_loaders.push_back(r);
     };
     MyClassLoaderVisitor v(env, callback);
     art::Runtime::Current()->getClassLinker()->VisitClassLoaders(&v);
+    auto arr = env->NewObjectArray(class_loaders.size(), class_loader_class, nullptr);
+    for (auto i = 0; i < class_loaders.size(); i++) {
+        auto o = class_loaders[i];
+        env->SetObjectArrayElement(arr, i, o);
+        deleteLocalRef(env, o);
+    }
+    return arr;
 }
 
 /*

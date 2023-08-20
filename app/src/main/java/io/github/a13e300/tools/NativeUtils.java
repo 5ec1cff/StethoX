@@ -12,6 +12,6 @@ public class NativeUtils {
         }
     }
 
-    public static native void enumerateClassLoader(ObjectEnumerator e);
+    public static native ClassLoader[] getClassLoaders();
     public static native boolean initNative();
 }

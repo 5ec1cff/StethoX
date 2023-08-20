@@ -295,11 +295,7 @@ public class HookFunction extends BaseFunction {
     }
 
     @JSFunction
-    public static void enumerateClassLoader(Context cx, Scriptable thisObj, Object[] args, Function funObj) {
-        if (args.length != 1 || !(args[0] instanceof Function)) throw new IllegalArgumentException("");
-        var fun = (Function) args[0];
-        NativeUtils.enumerateClassLoader((e) -> {
-            fun.call(cx, thisObj.getParentScope(), null, new Object[]{e});
-        });
+    public static ClassLoader[] getClassLoaders(Context cx, Scriptable thisObj, Object[] args, Function funObj) {
+        return NativeUtils.getClassLoaders();
     }
 }
