@@ -125,8 +125,8 @@ public class StethoxAppInterceptor implements IXposedHookZygoteInit {
     @Override
     public void initZygote(StartupParam startupParam) throws Throwable {
         XposedBridge.log("initZygote");
-        initWithMakeApplication();
-        // initWithAttach();
+        // initWithMakeApplication();
+        initWithAttach();
     }
 
     private void initWithAttachBaseContext() {
@@ -144,11 +144,6 @@ public class StethoxAppInterceptor implements IXposedHookZygoteInit {
 
     private void initWithAttach() {
         XposedHelpers.findAndHookMethod(Application.class, "attach", Context.class, new XC_MethodHook() {
-            @Override
-            protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                XposedBridge.log("before attach " + param.thisObject);
-            }
-
             @Override
             protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                 XposedBridge.log("after attach " + param.thisObject);
