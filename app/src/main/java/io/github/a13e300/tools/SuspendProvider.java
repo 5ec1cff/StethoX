@@ -1,5 +1,6 @@
 package io.github.a13e300.tools;
 
+import android.annotation.SuppressLint;
 import android.content.ContentProvider;
 import android.content.ContentValues;
 import android.content.Context;
@@ -12,6 +13,7 @@ import android.util.Log;
 import java.util.Objects;
 
 public class SuspendProvider extends ContentProvider {
+
     private SharedPreferences mSp;
     public SuspendProvider() {
     }
@@ -55,6 +57,7 @@ public class SuspendProvider extends ContentProvider {
         Objects.requireNonNull(getContext()).enforceCallingPermission("android.permission.INTERACT_ACROSS_USERS", "permission denied");
     }
 
+    @SuppressLint("ApplySharedPref")
     @Override
     public Bundle call(String method, String arg, Bundle extras) {
         Log.d("suspend", "called method " + method);

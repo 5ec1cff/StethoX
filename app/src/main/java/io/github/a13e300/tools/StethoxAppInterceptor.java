@@ -7,6 +7,7 @@ import android.app.IActivityManager;
 import android.app.IApplicationThread;
 import android.app.Instrumentation;
 import android.content.Context;
+import android.content.ContextWrapper;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
@@ -32,6 +33,7 @@ import io.github.a13e300.tools.objects.RunOnHandlerFunction;
 import io.github.a13e300.tools.objects.UnhookFunction;
 
 public class StethoxAppInterceptor implements IXposedHookZygoteInit {
+
     private boolean initialized = false;
     private boolean mWaiting = false;
 
@@ -123,6 +125,42 @@ public class StethoxAppInterceptor implements IXposedHookZygoteInit {
     @Override
     public void initZygote(StartupParam startupParam) throws Throwable {
         XposedBridge.log("initZygote");
+        initWithMakeApplication();
+        // initWithAttach();
+    }
+
+    private void initWithAttachBaseContext() {
+        XposedHelpers.findAndHookMethod(ContextWrapper.class, "attachBaseContext", Context.class, new XC_MethodHook() {
+            @Override
+            protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                if (!(param.thisObject instanceof Application)) return;
+                var context = (Application) param.thisObject;
+                XposedBridge.log("context " + context);
+                if (context == null) return;
+                initializeStetho(context);
+            }
+        });
+    }
+
+    private void initWithAttach() {
+        XposedHelpers.findAndHookMethod(Application.class, "attach", Context.class, new XC_MethodHook() {
+            @Override
+            protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                XposedBridge.log("before attach " + param.thisObject);
+            }
+
+            @Override
+            protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                XposedBridge.log("after attach " + param.thisObject);
+                var context = (Application) param.thisObject;
+                XposedBridge.log("context " + context);
+                if (context == null) return;
+                initializeStetho(context);
+            }
+        });
+    }
+
+    private void initWithMakeApplication() {
         Method makeApplication;
         try {
             makeApplication = XposedHelpers.findMethodExact(
