@@ -39,7 +39,7 @@ public class Utils {
     public static String getStackTrace(boolean hide) {
         var sb = new StringBuilder();
         var st = Thread.currentThread().getStackTrace();
-        for (int i = 2; i < st.length; i++) {
+        for (int i = 3; i < st.length; i++) {
             if (!hide && st[i].getClassName().startsWith("org.mozilla.javascript")) continue;
             sb.append(st[i].toString()).append("\n");
         }
