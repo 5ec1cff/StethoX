@@ -262,7 +262,8 @@ public class HookFunction extends BaseFunction {
             + "    printStackTrace()\n"
             + "    hook.findClass(String[, Classloader])\n"
             + "    hook.setClassLoader / getClassLoader\n"
-            + "    hook.getClassLoaders (get an array of all classloaders)";
+            + "    hook.getClassLoaders (get an array of all classloaders)\n"
+            + "    runOnHandler(callback, handler) & runOnUiThread(callback)";
 
     @JSFunction
     public static String toString(Context cx, Scriptable thisObj, Object[] args, Function funObj) {
