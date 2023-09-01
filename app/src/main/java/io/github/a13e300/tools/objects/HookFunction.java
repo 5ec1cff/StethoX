@@ -67,6 +67,7 @@ public class HookFunction extends BaseFunction {
         var first = args[0];
         if (first instanceof Wrapper) first = ((Wrapper) first).unwrap();
         Class<?> hookClass = null;
+        ClassLoader hookClassLoader = getClassLoader();
         List<Member> hookMembers = null;
         Function callback;
         int pos = 0;
@@ -76,6 +77,7 @@ public class HookFunction extends BaseFunction {
             if (args.length >= 2 && args[1] instanceof String) {
                 pos++;
                 try {
+                    hookClassLoader = (ClassLoader) first;
                     hookClass = ((ClassLoader) first).loadClass((String) args[1]);
                 } catch (ClassNotFoundException e) {
                     throw new RuntimeException(e);
@@ -109,12 +111,20 @@ public class HookFunction extends BaseFunction {
                 int nArgs = args.length - 1 - pos;
                 methodSig = new Class[nArgs];
                 if (nArgs > 0) {
-                    for (int i = pos; i < args.length - 1; i++) {
-                        if (!(args[i] instanceof Class)) {
+                    for (int i = 0; i < nArgs; i++) {
+                        var arg = args[pos + i];
+                        if (arg instanceof Wrapper) arg = ((Wrapper) arg).unwrap();
+                        try {
+                            if (arg instanceof String)
+                                arg = hookClassLoader.loadClass((String) arg);
+                        } catch (ClassNotFoundException e) {
+                            throw new IllegalArgumentException(e);
+                        }
+                        if (!(arg instanceof Class)) {
                             throw new IllegalArgumentException("argument " + i + " is not class");
                         }
+                        methodSig[i] = (Class<?>) arg;
                     }
-                    System.arraycopy(args, pos + 2, methodSig, 0, nArgs);
                 }
             } else {
                 methodSig = new Class[0];
@@ -251,7 +261,8 @@ public class HookFunction extends BaseFunction {
             + "    getStackTrace()\n"
             + "    printStackTrace()\n"
             + "    hook.findClass(String[, Classloader])\n"
-            + "    hook.setClassLoader / getClassLoader";
+            + "    hook.setClassLoader / getClassLoader\n"
+            + "    hook.getClassLoaders (get an array of all classloaders)";
 
     @JSFunction
     public static String toString(Context cx, Scriptable thisObj, Object[] args, Function funObj) {
