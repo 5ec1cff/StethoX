@@ -247,7 +247,7 @@ public class HookFunction extends BaseFunction {
             + "    Callback function is called before original method invoked,\n"
             + "    with a HookParam object. Return value and exception are ignored (exceptions are logged).\n"
             + "    You must use HookParam to modify the arguments and result of the invocation\n"
-            + "  HookParam:\n    .method Readonly\n    .thisObject Readonly\n    .args\n    .result\n    .throwable\n"
+            + "  HookParam:\n    .method Readonly\n    .thisObject\n    .args\n    .result\n    .throwable\n"
             + "    .invoke() - invoke the original method (args from HookParam)\n"
             + "    if invoke() is not called during the callback, the original\n"
             + "    method is automatically invoked after the callback\n"

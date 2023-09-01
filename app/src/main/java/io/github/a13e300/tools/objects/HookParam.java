@@ -104,6 +104,11 @@ public class HookParam extends ScriptableObject {
         return ((HookParam) thisObj).mParam.thisObject;
     }
 
+    @JSSetter
+    public static void setThisObject(Scriptable thisObj, Object[] value) {
+        ((HookParam) thisObj).mParam.thisObject = value;
+    }
+
     @JSGetter
     public static Member getMethod(Scriptable thisObj) {
         return ((HookParam) thisObj).mParam.method;
