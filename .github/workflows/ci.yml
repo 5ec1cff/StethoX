@@ -23,6 +23,7 @@ jobs:
         with:
           submodules: "recursive"
           fetch-depth: 0
+          path: StethoX
 
       - name: Write key
         if: ${{ ( github.event_name != 'pull_request' && github.ref == 'refs/heads/master' ) || github.ref_type == 'tag' }}
@@ -34,6 +35,12 @@ jobs:
             echo androidStoreFile='key.jks' >> gradle.properties
             echo ${{ secrets.KEY_STORE }} | base64 --decode > key.jks
           fi
+
+      - name: Checkout rhino
+        uses: actions/checkout@v3
+        with:
+          repository: 5ec1cff/rhino
+          path: rhino
 
       - name: Checkout stetho
         uses: actions/checkout@v3
@@ -52,7 +59,16 @@ jobs:
         with:
           gradle-home-cache-cleanup: true
 
-      - name: Build dependencies
+      - name: Build rhino
+        working-directory: rhino
+        run: |
+          echo 'org.gradle.caching=true' >> ~/.gradle/gradle.properties
+          echo 'org.gradle.parallel=true' >> ~/.gradle/gradle.properties
+          echo 'org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8 -XX:+UseParallelGC' >> ~/.gradle/gradle.properties
+          echo 'android.native.buildOutput=verbose' >> ~/.gradle/gradle.properties
+          ./gradlew publishToMavenLocal
+
+      - name: Build stetho
         working-directory: stetho
         run: |
           echo 'org.gradle.caching=true' >> ~/.gradle/gradle.properties
@@ -62,6 +78,7 @@ jobs:
           ./gradlew publishToMavenLocal
 
       - name: Build with Gradle
+        working-directory: StethoX
         run: |
           ./gradlew assemble
 
@@ -69,10 +86,10 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: "StethoX-release-ci.apk"
-          path: "./app/build/outputs/apk/release/app-release.apk"
+          path: "./StethoX/app/build/outputs/apk/release/app-release.apk"
 
       - name: Upload debug
         uses: actions/upload-artifact@v3
         with:
           name: "StethoX-debug-ci.apk"
-          path: "./app/build/outputs/apk/debug/app-debug.apk"
+          path: "./StethoX/app/build/outputs/apk/debug/app-debug.apk"
