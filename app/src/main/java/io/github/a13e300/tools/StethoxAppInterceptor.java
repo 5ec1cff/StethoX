@@ -16,6 +16,8 @@ import android.os.ServiceManager;
 import com.facebook.stetho.Stetho;
 import com.facebook.stetho.rhino.JsRuntimeReplFactoryBuilder;
 
+import org.mozilla.javascript.BaseFunction;
+import org.mozilla.javascript.Scriptable;
 import org.mozilla.javascript.ScriptableObject;
 
 import java.lang.reflect.InvocationTargetException;
@@ -28,6 +30,7 @@ import de.robv.android.xposed.XposedHelpers;
 import io.github.a13e300.tools.objects.GetStackTraceFunction;
 import io.github.a13e300.tools.objects.HookFunction;
 import io.github.a13e300.tools.objects.HookParam;
+import io.github.a13e300.tools.objects.OkHttpInterceptorObject;
 import io.github.a13e300.tools.objects.PrintStackTraceFunction;
 import io.github.a13e300.tools.objects.RunOnHandlerFunction;
 import io.github.a13e300.tools.objects.UnhookFunction;
@@ -82,7 +85,9 @@ public class StethoxAppInterceptor implements IXposedHookZygoteInit {
                                                 ScriptableObject.defineClass(scope, HookFunction.class);
                                                 ScriptableObject.defineClass(scope, UnhookFunction.class);
                                                 ScriptableObject.defineClass(scope, HookParam.class);
+                                                ScriptableObject.defineClass(scope, OkHttpInterceptorObject.class);
                                                 scope.defineProperty("hook", new HookFunction(scope), ScriptableObject.DONTENUM | ScriptableObject.CONST);
+                                                scope.defineProperty("okhttp3", new OkHttpInterceptorObject(scope), ScriptableObject.DONTENUM | ScriptableObject.CONST);
                                                 synchronized (StethoxAppInterceptor.this) {
                                                     if (mWaiting) {
                                                         var method = StethoxAppInterceptor.class.getDeclaredMethod("cont", ScriptableObject.class);
@@ -99,6 +104,19 @@ public class StethoxAppInterceptor implements IXposedHookZygoteInit {
                                         })
                                         .onFinalize(scope -> {
                                             ((HookFunction) ScriptableObject.getProperty(scope, "hook")).clearHooks();
+                                            ((OkHttpInterceptorObject) ScriptableObject.getProperty(scope, "okhttp3")).stop(true);
+                                        })
+                                        // .importClass(DexUtils.class)
+                                        // .importClass(StethoOkHttp3ProxyInterceptor.class)
+                                        // .importClass(MutableNameMap.class)
+                                        // .importClass(DexKitWrapper.class)
+                                        // .importPackage("org.luckypray.dexkit.query")
+                                        // .importPackage("org.luckypray.dexkit.query.matchers")
+                                        .addFunction("MYCL", new BaseFunction() {
+                                            @Override
+                                            public Object call(org.mozilla.javascript.Context cx, Scriptable scope, Scriptable thisObj, Object[] args) {
+                                                return StethoxAppInterceptor.class.getClassLoader();
+                                            }
                                         })
                                         .build()
                         ).finish()

@@ -54,7 +54,7 @@ public class HookFunction extends BaseFunction {
         return "HookFunction";
     }
 
-    private synchronized ClassLoader getClassLoader() {
+    synchronized ClassLoader getClassLoader() {
         if (mClassLoader == null) {
             var app = AndroidAppHelper.currentApplication();
             if (app == null) return ClassLoader.getSystemClassLoader();
