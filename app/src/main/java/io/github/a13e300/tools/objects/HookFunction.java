@@ -149,7 +149,7 @@ public class HookFunction extends BaseFunction {
                 throw new RuntimeException(e);
             }
         }
-        if (hookMembers == null) {
+        if (hookMembers == null || hookMembers.isEmpty()) {
             throw new IllegalArgumentException("cannot find members");
         }
         if (!(args[args.length - 1] instanceof Function)) throw new IllegalArgumentException("callback is required");
