@@ -30,6 +30,7 @@ import de.robv.android.xposed.XposedHelpers;
 import io.github.a13e300.tools.objects.GetStackTraceFunction;
 import io.github.a13e300.tools.objects.HookFunction;
 import io.github.a13e300.tools.objects.HookParam;
+import io.github.a13e300.tools.objects.JArrayFunction;
 import io.github.a13e300.tools.objects.OkHttpInterceptorObject;
 import io.github.a13e300.tools.objects.PrintStackTraceFunction;
 import io.github.a13e300.tools.objects.RunOnHandlerFunction;
@@ -78,6 +79,22 @@ public class StethoxAppInterceptor implements IXposedHookZygoteInit {
                                         .addFunction("printStackTrace", new PrintStackTraceFunction())
                                         .addFunction("runOnUiThread", new RunOnHandlerFunction(new Handler(Looper.getMainLooper())))
                                         .addFunction("runOnHandler", new RunOnHandlerFunction())
+                                        .addFunction("JArray", new JArrayFunction(null))
+                                        .addFunction("IntArray", new JArrayFunction(int.class))
+                                        .addFunction("LongArray", new JArrayFunction(long.class))
+                                        .addFunction("ByteArray", new JArrayFunction(byte.class))
+                                        .addFunction("BooleanArray", new JArrayFunction(boolean.class))
+                                        .addFunction("CharArray", new JArrayFunction(char.class))
+                                        .addFunction("FloatArray", new JArrayFunction(float.class))
+                                        .addFunction("DoubleArray", new JArrayFunction(double.class))
+                                        .addVariable("int", int.class)
+                                        .addVariable("long", long.class)
+                                        .addVariable("double", double.class)
+                                        .addVariable("float", float.class)
+                                        .addVariable("byte", byte.class)
+                                        .addVariable("boolean", boolean.class)
+                                        .addVariable("char", char.class)
+                                        .importPackage("java.lang")
                                         .onInitScope(scope -> {
                                             try {
                                                 scope.defineProperty("activities", null, Utils.class.getDeclaredMethod("getActivities", ScriptableObject.class), null, ScriptableObject.READONLY);
