@@ -37,7 +37,7 @@ public class SuspendProvider extends ContentProvider {
     public boolean onCreate() {
         var ctx = getContext();
         if (ctx == null) return false;
-        mSp = ctx.getSharedPreferences("suspend", Context.MODE_PRIVATE);
+        mSp = ctx.createDeviceProtectedStorageContext().getSharedPreferences("suspend", Context.MODE_PRIVATE);
         return true;
     }
 
