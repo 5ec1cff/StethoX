@@ -80,7 +80,7 @@ jobs:
       - name: Build with Gradle
         working-directory: StethoX
         run: |
-          ./gradlew assemble
+          ./gradlew app:assemble
 
       - name: Upload release
         uses: actions/upload-artifact@v3
