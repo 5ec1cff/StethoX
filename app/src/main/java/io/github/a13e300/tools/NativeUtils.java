@@ -14,4 +14,6 @@ public class NativeUtils {
 
     public static native ClassLoader[] getClassLoaders();
     public static native boolean initNative();
+
+    public static native ClassLoader[] getClassLoaders2();
 }

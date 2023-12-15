@@ -32,5 +32,6 @@ android {
 }
 
 dependencies {
-    implementation(project(":app"))
+    // this breaks native code indexing, use carefully !
+    // implementation(project(":app"))
 }

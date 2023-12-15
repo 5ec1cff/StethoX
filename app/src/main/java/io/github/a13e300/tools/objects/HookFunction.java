@@ -312,4 +312,9 @@ public class HookFunction extends BaseFunction {
     public static ClassLoader[] getClassLoaders(Context cx, Scriptable thisObj, Object[] args, Function funObj) {
         return NativeUtils.getClassLoaders();
     }
+
+    @JSFunction
+    public static ClassLoader[] getClassLoaders2(Context cx, Scriptable thisObj, Object[] args, Function funObj) {
+        return NativeUtils.getClassLoaders2();
+    }
 }
