@@ -15,7 +15,7 @@ public class UnhookFunction extends ScriptableObject {
     public UnhookFunction() {
     }
 
-    private List<XC_MethodHook.Unhook> mUnhooks;
+    List<XC_MethodHook.Unhook> mUnhooks;
 
     public UnhookFunction(Scriptable scope) {
         setParentScope(scope);

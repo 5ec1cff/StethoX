@@ -18,16 +18,19 @@ import org.mozilla.javascript.annotations.JSFunction;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Member;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XC_MethodReplacement;
 import de.robv.android.xposed.XposedBridge;
 import io.github.a13e300.tools.NativeUtils;
+import io.github.a13e300.tools.Utils;
 
 public class HookFunction extends BaseFunction {
     /**
@@ -65,6 +68,10 @@ public class HookFunction extends BaseFunction {
 
     @Override
     public Object call(Context cx, Scriptable scope, Scriptable thisObj, Object[] args) {
+        return hook(cx, scope, args);
+    }
+
+    private UnhookFunction hook(Context cx, Scriptable scope, Object[] args) {
         if (args.length == 0) return null;
         var first = args[0];
         if (first instanceof Wrapper) first = ((Wrapper) first).unwrap();
@@ -152,28 +159,35 @@ public class HookFunction extends BaseFunction {
         if (hookMembers == null || hookMembers.isEmpty()) {
             throw new IllegalArgumentException("cannot find members");
         }
-        if (!(args[args.length - 1] instanceof Function)) throw new IllegalArgumentException("callback is required");
-        callback = (Function) args[args.length - 1];
-        var methodHook = new XC_MethodReplacement() {
-            @Override
-            protected Object replaceHookedMethod(MethodHookParam param) throws Throwable {
-                var p = new HookParam(scope);
-                p.setParam(param);
-                var context = enterJsContext();
-                try {
-                    callback.call(context, scope, null, new Object[]{p});
-                } catch (Throwable t) {
-                    JsConsole.fromScope(scope).error("error occurred in hook of " + param.method, t);
-                } finally {
-                    Context.exit();
+        var lastArg = args[args.length - 1];
+        XC_MethodHook methodHook;
+        if (lastArg instanceof Function) {
+            callback = (Function) lastArg;
+            methodHook = new XC_MethodReplacement() {
+                @Override
+                protected Object replaceHookedMethod(MethodHookParam param) throws Throwable {
+                    var p = new HookParam(scope);
+                    p.setParam(param);
+                    var context = enterJsContext();
+                    try {
+                        callback.call(context, scope, null, new Object[]{p});
+                    } catch (Throwable t) {
+                        JsConsole.fromScope(scope).error("error occurred in hook of " + param.method, t);
+                    } finally {
+                        Context.exit();
+                    }
+                    if (!p.isInvoked()) return p.invoke();
+                    else {
+                        if (p.mParam.hasThrowable()) throw p.mParam.getThrowable();
+                        else return p.mParam.getResult();
+                    }
                 }
-                if (!p.isInvoked()) return p.invoke();
-                else {
-                    if (p.mParam.hasThrowable()) throw p.mParam.getThrowable();
-                    else return p.mParam.getResult();
-                }
-            }
-        };
+            };
+        } else if (lastArg instanceof XC_MethodHook) {
+            methodHook = (XC_MethodHook) lastArg;
+        } else {
+            throw new IllegalArgumentException("callback " + lastArg + " is neither Function nor XC_MethodHook");
+        }
         var console = JsConsole.fromScope(scope);
         var unhooks = new ArrayList<XC_MethodHook.Unhook>();
         hookMembers.forEach((member) -> {
@@ -265,7 +279,8 @@ public class HookFunction extends BaseFunction {
             + "    hook.findClass(String[, Classloader])\n"
             + "    hook.setClassLoader / getClassLoader\n"
             + "    hook.getClassLoaders (get an array of all classloaders)\n"
-            + "    runOnHandler(callback, handler) & runOnUiThread(callback)";
+            + "    runOnHandler(callback, handler) & runOnUiThread(callback)\n"
+            + "    trace() / traces(): parameters like hook, but without callback, the hook will print corresponding information automatically (traces contains stack trace)";
 
     @JSFunction
     public static String toString(Context cx, Scriptable thisObj, Object[] args, Function funObj) {
@@ -316,5 +331,53 @@ public class HookFunction extends BaseFunction {
     @JSFunction
     public static ClassLoader[] getClassLoaders2(Context cx, Scriptable thisObj, Object[] args, Function funObj) {
         return NativeUtils.getClassLoaders2();
+    }
+
+    @JSFunction
+    public static Object trace(Context cx, Scriptable thisObj, Object[] args, Function funObj) {
+        return ((HookFunction) thisObj).traceInternal(cx, thisObj.getParentScope(), args, funObj, false);
+    }
+
+    @JSFunction
+    public static Object traces(Context cx, Scriptable thisObj, Object[] args, Function funObj) {
+        return ((HookFunction) thisObj).traceInternal(cx, thisObj.getParentScope(), args, funObj, true);
+    }
+
+    private UnhookFunction traceInternal(Context cx, Scriptable scope, Object[] args, Function funObj, boolean stack) {
+        var realArgs = new Object[args.length + 1];
+        System.arraycopy(args, 0, realArgs, 0, args.length);
+        var console = JsConsole.fromScope(scope);
+        var counter = new AtomicInteger(0);
+        realArgs[realArgs.length - 1] = new XC_MethodHook() {
+            @Override
+            protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                var count = counter.incrementAndGet();
+                try {
+                    console.info(count, "method", param.method);
+                    console.info(count, "thread", Thread.currentThread().toString(), Thread.currentThread());
+                    if (!Modifier.isStatic(param.method.getModifiers())) {
+                        console.info(count, "this", param.thisObject);
+                    }
+                    for (var i = 0; i < param.args.length; i++) {
+                        console.info(count, "arg", i, param.args[i]);
+                    }
+                    if (param.hasThrowable()) {
+                        console.info(count, "throwable", param.getThrowable());
+                    } else {
+                        if (param.method instanceof Method && ((Method) param.method).getReturnType() != Void.TYPE) {
+                            console.info(count, "result", param.getResult());
+                        }
+                    }
+                    if (stack) {
+                        console.info(Utils.getStackTrace(false));
+                    }
+                } catch (Throwable t) {
+                    console.error("error occurred while tracing", t);
+                }
+            }
+        };
+        var unhook = hook(cx, scope, realArgs);
+        console.info("start tracing " + unhook.mUnhooks.size() + " methods (stackTrace=" + stack + ")");
+        return unhook;
     }
 }
