@@ -2,7 +2,6 @@ package io.github.a13e300.tools.objects;
 
 import static io.github.a13e300.tools.Utils.enterJsContext;
 
-import android.app.AndroidAppHelper;
 import android.util.Log;
 
 import com.facebook.stetho.rhino.JsConsole;
@@ -24,12 +23,14 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XC_MethodReplacement;
 import de.robv.android.xposed.XposedBridge;
 import io.github.a13e300.tools.NativeUtils;
+import io.github.a13e300.tools.StethoxAppInterceptor;
 import io.github.a13e300.tools.Utils;
 
 public class HookFunction extends BaseFunction {
@@ -59,9 +60,9 @@ public class HookFunction extends BaseFunction {
 
     synchronized ClassLoader getClassLoader() {
         if (mClassLoader == null) {
-            var app = AndroidAppHelper.currentApplication();
-            if (app == null) return ClassLoader.getSystemClassLoader();
-            mClassLoader = app.getClassLoader();
+            ClassLoader cl = StethoxAppInterceptor.mClassLoader;
+            if (cl == null) return ClassLoader.getSystemClassLoader();
+            mClassLoader = cl;
         }
         return mClassLoader;
     }
@@ -113,7 +114,9 @@ public class HookFunction extends BaseFunction {
                 if (pos + 1 == args.length - 2 && args[pos + 1] == null) {
                     emptySig = true;
                 }
-            } else throw new IllegalArgumentException("method name is required");
+            } else {
+                methodName = null;
+            }
             pos++;
             Class<?>[] methodSig;
             if (!emptySig) {
@@ -139,7 +142,38 @@ public class HookFunction extends BaseFunction {
                 methodSig = new Class[0];
             }
             try {
-                if ("<init>".equals(methodName)) {
+                if (methodName == null) {
+                    if (methodSig.length != 0) throw new IllegalArgumentException("should not specify method signature!");
+                    hookMembers = List.of(hookClass.getDeclaredMethods());
+                } else if (methodName.startsWith("@")) {
+                    if (methodName.equals("@")) throw new IllegalArgumentException("must contain at least one of: method,all,ALL,constructor,init,public,instance");
+                    var queryArgs = methodName.substring(1).split(",");
+                    var isPublic = false;
+                    var allMethod = false;
+                    var allConstructor = false;
+                    var isInstance = false;
+                    for (var c: queryArgs) {
+                        if ("all".equals(c) || "method".equals(c)) allMethod = true;
+                        else if ("ALL".equals(c)) allMethod = allConstructor = true;
+                        else if ("constructor".equals(c) || "init".equals(c)) allConstructor = true;
+                        else if ("public".equals(c)) allMethod = isPublic = true;
+                        else if ("instance".equals(c)) allMethod = isInstance = true;
+                        else throw new IllegalArgumentException("must contain at least one of: method,all,ALL,constructor,init,public,instance");
+                    }
+                    var fIsPublic = isPublic;
+                    var fIsInstance = isInstance;
+                    if (methodSig.length != 0) throw new IllegalArgumentException("should not specify method signature!");
+                    var result = new ArrayList<Member>();
+                    Consumer<Member> consumer = (it) -> {
+                        var match = true;
+                        if (fIsPublic) match = Modifier.isPublic(it.getModifiers());
+                        if (fIsInstance) match &= !Modifier.isStatic(it.getModifiers());
+                        if (match) result.add(it);
+                    };
+                    if (allMethod) Arrays.stream(hookClass.getDeclaredMethods()).forEach(consumer);
+                    if (allConstructor) Arrays.stream(hookClass.getDeclaredConstructors()).forEach(consumer);
+                    hookMembers = result;
+                } else if ("<init>".equals(methodName)) {
                     if (methodSig.length == 0 && !emptySig) {
                         hookMembers = List.of(hookClass.getDeclaredConstructors());
                     } else {
@@ -275,12 +309,14 @@ public class HookFunction extends BaseFunction {
             + "    When you disconnected from the console, all hooks are automatically removed\n"
             + "  Utils:\n"
             + "    getStackTrace()\n"
-            + "    printStackTrace()\n"
+            + "    printStackTrace() / pst()\n"
+            + "    findStackTrace(obj) / fst(obj): find stack trace and print, such as View\n"
             + "    hook.findClass(String[, Classloader])\n"
             + "    hook.setClassLoader / getClassLoader\n"
             + "    hook.getClassLoaders (get an array of all classloaders)\n"
             + "    runOnHandler(callback, handler) & runOnUiThread(callback)\n"
-            + "    trace() / traces(): parameters like hook, but without callback, the hook will print corresponding information automatically (traces contains stack trace)";
+            + "    trace() / traces(): parameters like hook, but without callback, the hook will print corresponding information automatically (traces contains stack trace)\n"
+            + "    deoptimizeMethod(method)";
 
     @JSFunction
     public static String toString(Context cx, Scriptable thisObj, Object[] args, Function funObj) {
@@ -379,5 +415,10 @@ public class HookFunction extends BaseFunction {
         var unhook = hook(cx, scope, realArgs);
         console.info("start tracing " + unhook.mUnhooks.size() + " methods (stackTrace=" + stack + ")");
         return unhook;
+    }
+
+    @JSFunction
+    public static void deoptimizeMethod(Context cx, Scriptable thisObj, Object[] args, Function funObj) throws Throwable {
+        XposedBridge.class.getDeclaredMethod("deoptimizeMethod", Member.class).invoke(null, args[0]);
     }
 }

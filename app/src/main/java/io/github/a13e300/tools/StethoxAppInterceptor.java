@@ -27,6 +27,7 @@ import de.robv.android.xposed.IXposedHookZygoteInit;
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
+import io.github.a13e300.tools.objects.FindStackTraceFunction;
 import io.github.a13e300.tools.objects.GetStackTraceFunction;
 import io.github.a13e300.tools.objects.HookFunction;
 import io.github.a13e300.tools.objects.HookParam;
@@ -40,6 +41,7 @@ public class StethoxAppInterceptor implements IXposedHookZygoteInit {
 
     private boolean initialized = false;
     private boolean mWaiting = false;
+    public static ClassLoader mClassLoader = null;
 
     private synchronized void cont(ScriptableObject ignore) {
         if (mWaiting) {
@@ -71,12 +73,18 @@ public class StethoxAppInterceptor implements IXposedHookZygoteInit {
         } catch (IllegalArgumentException e) {
             Logger.e("failed to find suspend provider, please ensure module process without restriction", e);
         }
+        try {
+            mClassLoader = context.getClassLoader();
+        } catch (Throwable t) {
+            Logger.e("failed to get classloader for context", t);
+        }
         Stetho.initialize(Stetho.newInitializerBuilder(context)
                 .enableWebKitInspector(
                         () -> new Stetho.DefaultInspectorModulesBuilder(context).runtimeRepl(
                                 new JsRuntimeReplFactoryBuilder(context)
                                         .addFunction("getStackTrace", new GetStackTraceFunction())
                                         .addFunction("printStackTrace", new PrintStackTraceFunction())
+                                        .addFunction("findStackTrace", new FindStackTraceFunction())
                                         .addFunction("runOnUiThread", new RunOnHandlerFunction(new Handler(Looper.getMainLooper())))
                                         .addFunction("runOnHandler", new RunOnHandlerFunction())
                                         .addFunction("JArray", new JArrayFunction(null))
@@ -95,7 +103,9 @@ public class StethoxAppInterceptor implements IXposedHookZygoteInit {
                                         .addVariable("boolean", boolean.class)
                                         .addVariable("char", char.class)
                                         .importPackage("java.lang")
-                                        .onInitScope(scope -> {
+                                        .addVariable("xposed_bridge", XposedBridge.class)
+                                        .addVariable("xposed_helper", XposedHelpers.class)
+                                        .onInitScope((jsContext, scope) -> {
                                             try {
                                                 scope.defineProperty("activities", null, Utils.class.getDeclaredMethod("getActivities", ScriptableObject.class), null, ScriptableObject.READONLY);
                                                 scope.defineProperty("current", null, Utils.class.getDeclaredMethod("getCurrentActivity", ScriptableObject.class), null, ScriptableObject.READONLY);
@@ -112,6 +122,9 @@ public class StethoxAppInterceptor implements IXposedHookZygoteInit {
                                                         scope.defineProperty("cont", StethoxAppInterceptor.this, method, null, ScriptableObject.READONLY);
                                                     }
                                                 }
+                                                jsContext.evaluateString(scope,
+                                                        "let st, pst, fst; st = pst = printStackTrace; fst = findStackTrace;",
+                                                        "initializer", 1, null);
                                             } catch (NoSuchMethodException |
                                                      InvocationTargetException |
                                                      IllegalAccessException |
