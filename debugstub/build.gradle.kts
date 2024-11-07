@@ -1,17 +1,17 @@
 plugins {
-    id("com.android.application")
+    alias(libs.plugins.agp.app)
 }
 
 android {
     namespace = "io.github.a13e300.demo"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         // rename to the debug target
         // or android studio will not recognize
         applicationId = "io.github.a13e300.demo"
         minSdk = 27
-        targetSdk = 34
+        targetSdk = 35
         versionCode = 1
         versionName = "1.0"
     }

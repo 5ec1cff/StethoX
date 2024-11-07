@@ -7,8 +7,8 @@ import java.io.FileWriter
 import java.util.Properties
 
 plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
+    alias(libs.plugins.agp.app)
+    alias(libs.plugins.kotlin)
 }
 
 val keystorePropertiesFile = rootProject.file("keystore.properties")
@@ -20,7 +20,7 @@ val keystoreProperties = if (keystorePropertiesFile.exists() && keystoreProperti
 
 android {
     namespace = "io.github.a13e300.tools"
-    compileSdk = 34
+    compileSdk = 35
     signingConfigs {
         if (keystoreProperties != null) {
             create("release") {
@@ -37,7 +37,7 @@ android {
     defaultConfig {
         applicationId = "io.github.a13e300.tools.stethox"
         minSdk = 24
-        targetSdk = 34
+        targetSdk = 35
         versionCode = 2
         versionName = "1.0.2"
         externalNativeBuild {
@@ -226,8 +226,7 @@ task("generateDefaultOkHttp3Helper") {
 }
 
 dependencies {
-    implementation("androidx.annotation:annotation:1.7.0")
-    implementation("androidx.core:core-ktx:+")
+    implementation("androidx.annotation:annotation:1.9.1")
     compileOnly("de.robv.android.xposed:api:82")
     compileOnly(project(":hidden-api"))
     implementation("com.github.5ec1cff.stetho:stetho:1.0-alpha-1")
