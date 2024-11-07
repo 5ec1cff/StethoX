@@ -11,15 +11,10 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
-      CCACHE_NOHASHDIR: "true"
-      CCACHE_HARDLINK: "true"
-      CCACHE_BASEDIR: "${{ github.workspace }}"
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           submodules: "recursive"
           fetch-depth: 0
@@ -37,27 +32,25 @@ jobs:
           fi
 
       - name: Checkout rhino
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           repository: 5ec1cff/rhino
           path: rhino
 
       - name: Checkout stetho
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           repository: 5ec1cff/stetho
           path: stetho
 
       - name: Setup Java
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
-          distribution: "temurin"
-          java-version: "17"
+          distribution: temurin
+          java-version: 17
 
       - name: Setup Gradle
-        uses: gradle/gradle-build-action@v2
-        with:
-          gradle-home-cache-cleanup: true
+        uses: gradle/actions/setup-gradle@v4
 
       - name: Build rhino
         working-directory: rhino
@@ -83,13 +76,13 @@ jobs:
           ./gradlew app:assemble
 
       - name: Upload release
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: "StethoX-release-ci.apk"
           path: "./StethoX/app/build/outputs/apk/release/app-release.apk"
 
       - name: Upload debug
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: "StethoX-debug-ci.apk"
           path: "./StethoX/app/build/outputs/apk/debug/app-debug.apk"
