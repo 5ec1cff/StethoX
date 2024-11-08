@@ -109,6 +109,7 @@ public class StethoxAppInterceptor implements IXposedHookZygoteInit {
                                             try {
                                                 scope.defineProperty("activities", null, Utils.class.getDeclaredMethod("getActivities", ScriptableObject.class), null, ScriptableObject.READONLY);
                                                 scope.defineProperty("current", null, Utils.class.getDeclaredMethod("getCurrentActivity", ScriptableObject.class), null, ScriptableObject.READONLY);
+                                                scope.defineProperty("fragments", null, Utils.class.getDeclaredMethod("getFragments", ScriptableObject.class), null, ScriptableObject.READONLY);
                                                 ScriptableObject.defineClass(scope, HookFunction.class);
                                                 ScriptableObject.defineClass(scope, UnhookFunction.class);
                                                 ScriptableObject.defineClass(scope, HookParam.class);
