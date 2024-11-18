@@ -33,6 +33,7 @@ android {
     }
     buildFeatures {
         buildConfig = true
+        prefab = true
     }
     defaultConfig {
         applicationId = "io.github.a13e300.tools.stethox"
@@ -42,7 +43,8 @@ android {
         versionName = "1.0.2"
         externalNativeBuild {
             cmake {
-                cppFlags += ""
+                cppFlags("-std=c++20", "-fno-rtti", "-fno-exceptions")
+                arguments += "-DANDROID_STL=none"
             }
         }
     }
@@ -226,13 +228,14 @@ task("generateDefaultOkHttp3Helper") {
 }
 
 dependencies {
-    implementation("androidx.annotation:annotation:1.9.1")
-    compileOnly("de.robv.android.xposed:api:82")
+    implementation(libs.annotation)
+    compileOnly(libs.api)
     compileOnly(project(":hidden-api"))
-    implementation("com.github.5ec1cff.stetho:stetho:1.0-alpha-1")
-    implementation("com.github.5ec1cff.stetho:stetho-js-rhino:1.0-alpha-1")
-    implementation("com.github.5ec1cff.stetho:stetho-urlconnection:1.0-alpha-1")
-    implementation("org.mozilla:rhino:1.7.15-SNAPSHOT")
-    implementation("com.linkedin.dexmaker:dexmaker:2.28.3")
-    implementation("org.luckypray:dexkit:2.0.0-rc4")
+    implementation(libs.stetho)
+    implementation(libs.stetho.js.rhino)
+    implementation(libs.stetho.urlconnection)
+    implementation(libs.rhino)
+    implementation(libs.dexmaker)
+    implementation(libs.dexkit)
+    implementation(libs.cxx)
 }

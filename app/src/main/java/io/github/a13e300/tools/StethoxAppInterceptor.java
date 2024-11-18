@@ -103,6 +103,7 @@ public class StethoxAppInterceptor implements IXposedHookZygoteInit {
                                         .addVariable("boolean", boolean.class)
                                         .addVariable("char", char.class)
                                         .importPackage("java.lang")
+                                        .importClass(NativeUtils.class)
                                         .addVariable("xposed_bridge", XposedBridge.class)
                                         .addVariable("xposed_helper", XposedHelpers.class)
                                         .onInitScope((jsContext, scope) -> {

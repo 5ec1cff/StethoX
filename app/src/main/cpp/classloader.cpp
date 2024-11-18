@@ -51,11 +51,11 @@ public:
     void VisitRoot(art::mirror::Object *root, const art::RootInfo &info ATTRIBUTE_UNUSED) final {
         jobject object = newLocalRef((JNIEnv *) env_, (jobject) root);
         if (object != nullptr) {
+            auto s = (jstring) env_->CallObjectMethod(env_->GetObjectClass(object), toStringMid);
+            auto c = env_->GetStringUTFChars(s, nullptr);
+            env_->ReleaseStringUTFChars(s, c);
+            LOGD("object name %s", c);
             if (env_->IsInstanceOf(object, classLoader_)) {
-                auto s = (jstring) env_->CallObjectMethod(env_->GetObjectClass(object), toStringMid);
-                auto c = env_->GetStringUTFChars(s, nullptr);
-                env_->ReleaseStringUTFChars(s, c);
-                LOGD("object name %s", c);
                 callback_((jobject) root);
             }
             deleteLocalRef((JNIEnv *) env_, object);
@@ -214,9 +214,6 @@ jobjectArray visitClassLoadersByRootVisitor(JNIEnv *env) {
 #ifdef DEBUG
     LOGI("SweepJniWeakGlobals: %p", SweepJniWeakGlobals);
 #endif
-    if (SweepJniWeakGlobals == nullptr) {
-        return nullptr;
-    }
 
     JavaVM *jvm;
     env->GetJavaVM(&jvm);
@@ -229,7 +226,7 @@ jobjectArray visitClassLoadersByRootVisitor(JNIEnv *env) {
         ClassLoaderVisitor visitor(env, class_loader_class, callback);
         VisitRoots(jvm, &visitor);
     }
-    {
+    if (SweepJniWeakGlobals != nullptr) {
         WeakClassLoaderVisitor visitor(env, class_loader_class, callback);
         SweepJniWeakGlobals(jvm, &visitor);
     }

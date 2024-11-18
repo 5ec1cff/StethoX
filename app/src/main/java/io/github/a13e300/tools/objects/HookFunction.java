@@ -20,6 +20,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -316,7 +317,18 @@ public class HookFunction extends BaseFunction {
             + "    hook.getClassLoaders (get an array of all classloaders)\n"
             + "    runOnHandler(callback, handler) & runOnUiThread(callback)\n"
             + "    trace() / traces(): parameters like hook, but without callback, the hook will print corresponding information automatically (traces contains stack trace)\n"
-            + "    deoptimizeMethod(method)";
+            + "    deoptimizeMethod(method)\n"
+            + "    getObjectsOfClass(targetClass[, boolean containsSubClasses]):\n"
+            + "      Get all objects in the VM, which class is `targetClass`, which can be a Class Object\n"
+            + "      or a String (used for find class in the context's ClassLoader)\n"
+            + "      If `containsSubClasses` is true, then the result contains objects which class is\n"
+            + "      subclass of `targetClass`. If it is unspecified or false, only objects which class\n"
+            + "      is exactly `targetClass` will be returned.\n"
+            + "    getAssignableClasses(targetClass[, classLoader])\n"
+            + "      Get all classes in the vm, which is assignable to `targetClass`.\n"
+            + "      `targetClass` can be a Class object or String, like `getObjectsOfClass`\n"
+            + "      `classLoader` can be a ClassLoader object, If it is specified, the the result\n"
+            + "      will be filtered out to classes in that classloader.\n";
 
     @JSFunction
     public static String toString(Context cx, Scriptable thisObj, Object[] args, Function funObj) {
@@ -420,5 +432,69 @@ public class HookFunction extends BaseFunction {
     @JSFunction
     public static void deoptimizeMethod(Context cx, Scriptable thisObj, Object[] args, Function funObj) throws Throwable {
         XposedBridge.class.getDeclaredMethod("deoptimizeMethod", Member.class).invoke(null, args[0]);
+    }
+
+    private Object[] getObjectsOfClass(Object[] args) throws Throwable {
+        if (args.length == 0) throw new IllegalArgumentException("usage: <clazz> [containsSubClass]");
+        Class<?> target;
+        var arg0 = args[0];
+        if (arg0 instanceof Wrapper) arg0 = ((Wrapper) arg0).unwrap();
+        if (arg0 instanceof Class) {
+            target = (Class<?>) arg0;
+        } else if (args[0] instanceof String) {
+            target = getClassLoader().loadClass((String) arg0);
+        } else {
+            throw new IllegalArgumentException("arg 0 must be a class!");
+        }
+        boolean containsSubClass = false;
+        if (args.length >= 2) {
+            var arg1 = args[1];
+            if (arg1 instanceof Wrapper) arg1 = ((Wrapper) arg1).unwrap();
+            if (arg1 instanceof Boolean) containsSubClass = (Boolean) arg1;
+            else throw new IllegalArgumentException("arg1 must be a boolean!");
+        }
+        return NativeUtils.getObjects(target, containsSubClass);
+    }
+
+    @JSFunction
+    public static Object[] getObjectsOfClass(Context cx, Scriptable thisObj, Object[] args, Function funObj) throws Throwable {
+        return ((HookFunction) thisObj).getObjectsOfClass(args);
+    }
+
+    private Class<?>[] getAssignableClasses(Object[] args) throws Throwable {
+        if (args.length == 0) throw new IllegalArgumentException("usage: <clazz> [classloader]");
+        Class<?> target;
+        ClassLoader loader = null;
+        var arg0 = args[0];
+        if (arg0 instanceof Wrapper) {
+            arg0 = ((Wrapper) arg0).unwrap();
+        }
+        if (arg0 instanceof Class) {
+            target = (Class<?>) arg0;
+        } else if (arg0 instanceof String) {
+            target = getClassLoader().loadClass((String) arg0);
+        } else {
+            throw new IllegalArgumentException("arg 0 must be a class!");
+        }
+        if (args.length >= 2) {
+            var arg1 = args[1];
+            if (arg1 instanceof Wrapper) arg1 = ((Wrapper) arg1).unwrap();
+            if (arg1 instanceof ClassLoader) loader = (ClassLoader) arg1;
+            else throw new IllegalArgumentException("arg1 must be a ClassLoader!");
+        }
+        var classes = NativeUtils.getAssignableClasses(target, loader);
+        if (loader != null) {
+            List<Class<?>> realClasses = new LinkedList<>();
+            for (var c: classes) {
+                if (c.getClassLoader() == loader) realClasses.add(c);
+            }
+            return realClasses.toArray(new Class<?>[0]);
+        }
+        return classes;
+    }
+
+    @JSFunction
+    public static Class<?>[] getAssignableClasses(Context cx, Scriptable thisObj, Object[] args, Function funObj) throws Throwable {
+        return ((HookFunction) thisObj).getAssignableClasses(args);
     }
 }

@@ -1,8 +1,25 @@
 [versions]
 agp = "8.7.2"
+annotation = "1.9.1"
+api = "82"
+dexkit = "2.0.0-rc4"
+dexmaker = "2.28.3"
 kotlin = "2.0.20"
+rhino = "1.7.15-SNAPSHOT"
+stetho = "1.0-alpha-1"
 
 [plugins]
 agp-app = { id = "com.android.application", version.ref = "agp" }
 agp-lib = { id = "com.android.library", version.ref = "agp" }
 kotlin = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+
+[libraries]
+annotation = { module = "androidx.annotation:annotation", version.ref = "annotation" }
+api = { module = "de.robv.android.xposed:api", version.ref = "api" }
+cxx = { module = "org.lsposed.libcxx:libcxx", version = "27.0.12077973" }
+dexkit = { module = "org.luckypray:dexkit", version.ref = "dexkit" }
+dexmaker = { module = "com.linkedin.dexmaker:dexmaker", version.ref = "dexmaker" }
+rhino = { module = "org.mozilla:rhino", version.ref = "rhino" }
+stetho = { module = "com.github.5ec1cff.stetho:stetho", version.ref = "stetho" }
+stetho-js-rhino = { module = "com.github.5ec1cff.stetho:stetho-js-rhino", version.ref = "stetho" }
+stetho-urlconnection = { module = "com.github.5ec1cff.stetho:stetho-urlconnection", version.ref = "stetho" }
