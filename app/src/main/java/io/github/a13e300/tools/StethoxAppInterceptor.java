@@ -12,6 +12,7 @@ import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.ServiceManager;
+import android.os.SystemProperties;
 
 import com.facebook.stetho.Stetho;
 import com.facebook.stetho.rhino.JsRuntimeReplFactoryBuilder;
@@ -20,8 +21,12 @@ import org.mozilla.javascript.BaseFunction;
 import org.mozilla.javascript.Scriptable;
 import org.mozilla.javascript.ScriptableObject;
 
+import java.io.File;
+import java.io.FileInputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 
 import de.robv.android.xposed.IXposedHookZygoteInit;
 import de.robv.android.xposed.XC_MethodHook;
@@ -59,20 +64,59 @@ public class StethoxAppInterceptor implements IXposedHookZygoteInit {
             initialized = true;
             return;
         }
-        Logger.d("Install Stetho: " + packageName);
+        var processName = Utils.getProcessName();
+        Logger.d("Install Stetho: " + packageName + " proc=" + processName);
+        var suspendRequested = false;
+
         try {
-            var r = context.getContentResolver().call(
-                    Uri.parse("content://io.github.a13e300.tools.stethox.suspend"),
-                    "process_started", Utils.getProcessName(), null
-            );
-            if (r != null && r.getBoolean("suspend", false)) {
-                Logger.d("suspend requested");
-                mWaiting = true;
-                Stetho.setSuspend(true);
+            var packages = SystemProperties.get("debug.stethox.suspend");
+            if (Arrays.asList(packages.split(",")).contains(processName)) {
+                suspendRequested = true;
+                Logger.d("suspend requested b prop");
             }
-        } catch (IllegalArgumentException e) {
-            Logger.e("failed to find suspend provider, please ensure module process without restriction", e);
+        } catch (Throwable t) {
+            Logger.e("get suspend prop", t);
         }
+
+        if (!suspendRequested) {
+
+            try {
+                var file = new File("/data/local/tmp/stethox_suspend");
+                if (!file.canRead()) return;
+                var bytes = new byte[(int) file.length()];
+                try (var is = new FileInputStream(file)) {
+                    is.read(bytes);
+                }
+                var str = new String(bytes, StandardCharsets.UTF_8);
+                if (Arrays.asList(str.split("\n")).contains(processName)) {
+                    suspendRequested = true;
+                    Logger.d("suspend requested by file");
+                }
+            } catch (Throwable t) {
+                Logger.e("get suspend file", t);
+            }
+        }
+
+        if (!suspendRequested) {
+            try {
+                var r = context.getContentResolver().call(
+                        Uri.parse("content://io.github.a13e300.tools.stethox.suspend"),
+                        "process_started", processName, null
+                );
+                if (r != null && r.getBoolean("suspend", false)) {
+                    suspendRequested = true;
+                    Logger.d("suspend requested by provider");
+                }
+            } catch (IllegalArgumentException e) {
+                Logger.e("failed to find suspend provider, please ensure module process without restriction", e);
+            }
+        }
+
+        if (suspendRequested) {
+            mWaiting = true;
+            Stetho.setSuspend(true);
+        }
+
         try {
             mClassLoader = context.getClassLoader();
         } catch (Throwable t) {

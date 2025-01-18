@@ -45,6 +45,20 @@ content call --uri content://io.github.a13e300.tools.stethox.suspend --method cl
 content call --uri content://io.github.a13e300.tools.stethox.suspend --method list
 ```
 
+You can also configure it by prop or file:
+
+```
+# Separate with newline
+setprop debug.stethox.suspend <processname>[,<processname>...]
+# clear
+setprop debug.stethox.suspend ''
+
+# Separate with newline
+echo '<processname>' > /data/local/tmp/stethox_suspend
+# clear
+rm /data/local/tmp/stethox_suspend
+```
+
 ## ATTENTION
 
 Never leave this Module enabled or installed on day to day use.
@@ -93,6 +107,20 @@ content call --uri content://io.github.a13e300.tools.stethox.suspend --method su
 content call --uri content://io.github.a13e300.tools.stethox.suspend --method clear [--arg ${processName}]
 # 列出配置
 content call --uri content://io.github.a13e300.tools.stethox.suspend --method list
+```
+
+你也可以使用 prop 或者文件配置：
+
+```
+# Separate with newline
+setprop debug.stethox.suspend <processname>[,<processname>...]
+# clear
+setprop debug.stethox.suspend ''
+
+# Separate with newline
+echo '<processname>' > /data/local/tmp/stethox_suspend
+# clear
+rm /data/local/tmp/stethox_suspend
 ```
 
 ## 注意
