@@ -57,4 +57,33 @@ public class NativeUtils {
     private static native Object[] nativeGetObjects(Class<?> clazz, boolean child);
 
     private static native Class<?>[] nativeGetAssignableClasses(Class<?> clazz, ClassLoader loader);
+
+    private static native void dumpThread();
+
+    public static class FrameVar {
+        String name;
+        String sig;
+        int slot;
+
+        Object lvalue;
+        long jvalue;
+        int ivalue;
+        short svalue;
+        char cvalue;
+        byte bvalue;
+        boolean zvalue;
+        float fvalue;
+        double dvalue;
+
+        public FrameVar() {}
+    }
+
+    private static native FrameVar[] getFrameVarsNative(int nframe);
+
+    public static FrameVar[] getFrameVars(int nframe) {
+        ensureJvmTi();
+        return getFrameVarsNative(nframe);
+    }
+
+
 }
