@@ -64,6 +64,7 @@ public class StethoxAppInterceptor implements IXposedHookZygoteInit {
             initialized = true;
             return;
         }
+
         var processName = Utils.getProcessName();
         Logger.d("Install Stetho: " + packageName + " proc=" + processName);
         var suspendRequested = false;
@@ -79,18 +80,18 @@ public class StethoxAppInterceptor implements IXposedHookZygoteInit {
         }
 
         if (!suspendRequested) {
-
             try {
                 var file = new File("/data/local/tmp/stethox_suspend");
-                if (!file.canRead()) return;
-                var bytes = new byte[(int) file.length()];
-                try (var is = new FileInputStream(file)) {
-                    is.read(bytes);
-                }
-                var str = new String(bytes, StandardCharsets.UTF_8);
-                if (Arrays.asList(str.split("\n")).contains(processName)) {
-                    suspendRequested = true;
-                    Logger.d("suspend requested by file");
+                if (file.canRead()) {
+                    var bytes = new byte[(int) file.length()];
+                    try (var is = new FileInputStream(file)) {
+                        is.read(bytes);
+                    }
+                    var str = new String(bytes, StandardCharsets.UTF_8);
+                    if (Arrays.asList(str.split("\n")).contains(processName)) {
+                        suspendRequested = true;
+                        Logger.d("suspend requested by file");
+                    }
                 }
             } catch (Throwable t) {
                 Logger.e("get suspend file", t);
