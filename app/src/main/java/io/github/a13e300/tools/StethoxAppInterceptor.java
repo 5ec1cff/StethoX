@@ -140,6 +140,7 @@ public class StethoxAppInterceptor implements IXposedHookZygoteInit {
                                         .addFunction("CharArray", new JArrayFunction(char.class))
                                         .addFunction("FloatArray", new JArrayFunction(float.class))
                                         .addFunction("DoubleArray", new JArrayFunction(double.class))
+                                        .addFunction("ShortArray", new JArrayFunction(short.class))
                                         .addVariable("int", int.class)
                                         .addVariable("long", long.class)
                                         .addVariable("double", double.class)
@@ -147,6 +148,7 @@ public class StethoxAppInterceptor implements IXposedHookZygoteInit {
                                         .addVariable("byte", byte.class)
                                         .addVariable("boolean", boolean.class)
                                         .addVariable("char", char.class)
+                                        .addVariable("short", short.class)
                                         .importPackage("java.lang")
                                         .importClass(NativeUtils.class)
                                         .addVariable("xposed_bridge", XposedBridge.class)
@@ -170,7 +172,11 @@ public class StethoxAppInterceptor implements IXposedHookZygoteInit {
                                                     }
                                                 }
                                                 jsContext.evaluateString(scope,
-                                                        "let st, pst, fst; st = pst = printStackTrace; fst = findStackTrace;",
+                                                        "let st, pst, fst; st = pst = printStackTrace; fst = findStackTrace;"
+                                                        + "intv=java.lang.Integer.valueOf; longv=java.lang.Long.valueOf; "
+                                                        + "boolv=java.lang.Boolean.valueOf; bytev=java.lang.Byte.valueOf; "
+                                                        + "charv=java.lang.Char.valueOf; shortv=java.lang.Short.valueOf; "
+                                                        + "floatv=java.lang.Float.valueOf; doublev=java.lang.Double.valueOf; ",
                                                         "initializer", 1, null);
                                             } catch (NoSuchMethodException |
                                                      InvocationTargetException |
