@@ -1,42 +1,81 @@
 #include <jni.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include "plt.h"
 #include "classloader.h"
 #include "logging.h"
-#include "art.h"
+#include "art.hpp"
 #include <functional>
 #include <utility>
 #include <vector>
 
-static jobject newLocalRef(JNIEnv *env, void *object) {
-    static jobject (*NewLocalRef)(JNIEnv *, void *) = nullptr;
-    if (object == nullptr) {
-        return nullptr;
+struct JNIEnvExt {
+private:
+    static inline jobject (*symNewLocalRef)(JNIEnvExt *, art::mirror::Object *) = nullptr;
+    static inline void (*symDeleteLocalRef)(JNIEnvExt *, jobject) = nullptr;
+public:
+    static bool Init(elf_parser::Elf &art) {
+        bool success = true;
+        symNewLocalRef = reinterpret_cast<decltype(symNewLocalRef)>(art.getSymbAddress("_ZN3art9JNIEnvExt11NewLocalRefEPNS_6mirror6ObjectE"));
+        if (!symNewLocalRef) {
+            success = false;
+            LOGE("not found: art::JNIEnvExt::NewLocalRef");
+        }
+        symDeleteLocalRef = reinterpret_cast<decltype(symDeleteLocalRef)>(art.getSymbAddress("_ZN3art9JNIEnvExt14DeleteLocalRefEP8_jobject"));
+        if (!symDeleteLocalRef) {
+            success = false;
+            LOGE("not found: art::JNIEnvExt::DeleteLocalRef");
+        }
+        return success;
     }
-    if (NewLocalRef == nullptr) {
-        NewLocalRef = (jobject (*)(JNIEnv *, void *)) plt_dlsym("_ZN3art9JNIEnvExt11NewLocalRefEPNS_6mirror6ObjectE", nullptr);
-        LOGD("NewLocalRef: %p", NewLocalRef);
-    }
-    if (NewLocalRef != nullptr) {
-        return NewLocalRef(env, object);
-    } else {
-        return nullptr;
-    }
-}
 
-static void deleteLocalRef(JNIEnv *env, jobject object) {
-    static void (*DeleteLocalRef)(JNIEnv *, jobject) = nullptr;
-    if (DeleteLocalRef == nullptr) {
-        DeleteLocalRef = (void (*)(JNIEnv *, jobject)) plt_dlsym("_ZN3art9JNIEnvExt14DeleteLocalRefEP8_jobject", nullptr);
-        LOGD("DeleteLocalRef: %p", DeleteLocalRef);
+    inline jobject NewLocalRef(art::mirror::Object* object) {
+        return symNewLocalRef(this, object);
     }
-    if (DeleteLocalRef != nullptr) {
-        DeleteLocalRef(env, object);
-    }
-}
 
-using Callback = std::function<void(jobject)>;
+    inline void DeleteLocalRef(jobject object) {
+        symDeleteLocalRef(this, object);
+    }
+
+    static inline JNIEnvExt* From(JNIEnv* env) {
+        return reinterpret_cast<JNIEnvExt*>(env);
+    }
+};
+
+struct JavaVMExt {
+private:
+    static inline void (*symVisitRoots)(JavaVMExt*, art::RootVisitor*) = nullptr;
+    static inline void (*symSweepJniWeakGlobals)(JavaVMExt*, art::IsMarkedVisitor*) = nullptr;
+
+public:
+    static bool Init(elf_parser::Elf &art) {
+        bool success = true;
+        symVisitRoots = reinterpret_cast<decltype(symVisitRoots)>(art.getSymbAddress("_ZN3art9JavaVMExt10VisitRootsEPNS_11RootVisitorE"));
+        if (!symVisitRoots) {
+            success = false;
+            LOGE("not found: art::JavaVMExt::VisitRoots");
+        }
+        symSweepJniWeakGlobals = reinterpret_cast<decltype(symSweepJniWeakGlobals)>(art.getSymbAddress("_ZN3art9JavaVMExt19SweepJniWeakGlobalsEPNS_15IsMarkedVisitorE"));
+        if (!symSweepJniWeakGlobals) {
+            success = false;
+            LOGE("not found: art::JavaVMExt::SweepJniWeakGlobals");
+        }
+        return success;
+    }
+
+    inline void VisitRoots(art::RootVisitor* visitor) {
+        if (symVisitRoots) symVisitRoots(this, visitor);
+    }
+
+    inline void SweepJniWeakGlobals(art::IsMarkedVisitor* visitor) {
+        if (symSweepJniWeakGlobals) symSweepJniWeakGlobals(this, visitor);
+    }
+
+    static inline JavaVMExt* From(JavaVM* vm) {
+        return reinterpret_cast<JavaVMExt*>(vm);
+    }
+};
+
+using Callback = std::function<void(art::mirror::Object*)>;
 
 class ClassLoaderVisitor : public art::SingleRootVisitor {
 private:
@@ -49,16 +88,16 @@ public:
     }
 
     void VisitRoot(art::mirror::Object *root, const art::RootInfo &info ATTRIBUTE_UNUSED) final {
-        jobject object = newLocalRef((JNIEnv *) env_, (jobject) root);
+        jobject object = JNIEnvExt::From(env_)->NewLocalRef(root);
         if (object != nullptr) {
             auto s = (jstring) env_->CallObjectMethod(env_->GetObjectClass(object), toStringMid);
             auto c = env_->GetStringUTFChars(s, nullptr);
             env_->ReleaseStringUTFChars(s, c);
             LOGD("object name %s", c);
             if (env_->IsInstanceOf(object, classLoader_)) {
-                callback_((jobject) root);
+                callback_(root);
             }
-            deleteLocalRef((JNIEnv *) env_, object);
+            JNIEnvExt::From(env_)->DeleteLocalRef(object);
         }
     }
 
@@ -67,35 +106,13 @@ private:
     jclass classLoader_;
 };
 
-/*
-static void checkGlobalRef(JNIEnv *env, jclass clazz, Callback cb) {
-    auto VisitRoots = (void (*)(void *, void *)) plt_dlsym("_ZN3art9JavaVMExt10VisitRootsEPNS_11RootVisitorE", nullptr);
-#ifdef DEBUG
-    LOGI("VisitRoots: %p", VisitRoots);
-#endif
-    if (VisitRoots == nullptr) {
-        return;
-    }
-    JavaVM *jvm;
-    env->GetJavaVM(&jvm);
-    ClassLoaderVisitor visitor(env, clazz, std::move(cb));
-    VisitRoots(jvm, &visitor);
-}
-*/
 class MyClassLoaderVisitor : public art::ClassLoaderVisitor {
 public:
     MyClassLoaderVisitor(JNIEnv *env, Callback callback) : env_(env), callback_(std::move(callback)) {
     }
 
     void Visit(art::mirror::ClassLoader *class_loader) override {
-        callback_((jobject) class_loader);
-        /*
-        jobject object = newLocalRef((JNIEnv *) env_, (jobject) class_loader);
-        if (object != nullptr) {
-            LOGD("object %p", object);
-            callback_(object);
-            deleteLocalRef((JNIEnv *) env_, object);
-        }*/
+        callback_(class_loader);
     }
 
 private:
@@ -106,17 +123,17 @@ private:
 jobjectArray visitClassLoaders(JNIEnv *env) {
     jclass class_loader_class = env->FindClass("java/lang/ClassLoader");
     std::vector<jobject> class_loaders;
-    auto callback = [&](jobject o) {
-        auto r = newLocalRef(env, o);
+    auto callback = [&](art::mirror::Object* o) {
+        auto r = JNIEnvExt::From(env)->NewLocalRef(reinterpret_cast<art::mirror::Object*>(o));
         class_loaders.push_back(r);
     };
     MyClassLoaderVisitor v(env, callback);
     art::Runtime::Current()->getClassLinker()->VisitClassLoaders(&v);
-    auto arr = env->NewObjectArray(class_loaders.size(), class_loader_class, nullptr);
+    auto arr = env->NewObjectArray(static_cast<jsize>(class_loaders.size()), class_loader_class, nullptr);
     for (auto i = 0; i < class_loaders.size(); i++) {
         auto o = class_loaders[i];
         env->SetObjectArrayElement(arr, i, o);
-        deleteLocalRef(env, o);
+        JNIEnvExt::From(env)->DeleteLocalRef(o);
     }
     return arr;
 }
@@ -131,16 +148,16 @@ public :
     }
 
     art::mirror::Object *IsMarked(art::mirror::Object *obj) override {
-        jobject object = newLocalRef(env_, (jobject) obj);
+        jobject object = JNIEnvExt::From(env_)->NewLocalRef(obj);
         if (object != nullptr) {
             if (env_->IsInstanceOf(object, classLoader_)) {
                 auto s = (jstring) env_->CallObjectMethod(env_->GetObjectClass(object), toStringMid);
                 auto c = env_->GetStringUTFChars(s, nullptr);
                 env_->ReleaseStringUTFChars(s, c);
                 LOGD("object name %s", c);
-                callback_((jobject) obj);
+                callback_(obj);
             }
-            deleteLocalRef((JNIEnv *) env_, object);
+            JNIEnvExt::From(env_)->DeleteLocalRef(object);
         }
         return obj;
     }
@@ -150,91 +167,91 @@ private:
     jclass classLoader_;
 };
 
-/*
-static void checkWeakGlobalRef(C_JNIEnv *env, jclass clazz) {
-    auto SweepJniWeakGlobals = (void (*)(void *, void *)) plt_dlsym("_ZN3art9JavaVMExt19SweepJniWeakGlobalsEPNS_15IsMarkedVisitorE", nullptr);
-#ifdef DEBUG
-    LOGI("SweepJniWeakGlobals: %p", SweepJniWeakGlobals);
-#endif
-    if (SweepJniWeakGlobals == nullptr) {
-        return;
-    }
-    JavaVM *jvm;
-    (*env)->GetJavaVM((JNIEnv *) env, &jvm);
-    WeakClassLoaderVisitor visitor(env, clazz);
-    SweepJniWeakGlobals(jvm, &visitor);
-}
-*/
-
-void enumerateClassLoader(JNIEnv *env, jobject cb) {
-    jclass clazz = env->FindClass("java/lang/ClassLoader");
-    if (env->ExceptionCheck()) {
-#ifdef DEBUG
-        env->ExceptionDescribe();
-#endif
-        env->ExceptionClear();
-    }
-    if (clazz == nullptr) {
-        LOGE("classloader is null");
-        return;
-    }
-
-    jclass callbackClass = env->FindClass("io/github/a13e300/tools/ObjectEnumerator");
-    if (env->ExceptionCheck()) {
-#ifdef DEBUG
-        env->ExceptionDescribe();
-#endif
-        env->ExceptionClear();
-    }
-    if (callbackClass == nullptr) {
-        LOGE("callback class is null");
-        return;
-    }
-    auto method = env->GetMethodID(callbackClass, "onEnumerate", "(Ljava/lang/Object;)V");
-
-    auto callback = [&](jobject o) {
-        env->CallVoidMethod(cb, method, o);
-    };
-
-    // checkGlobalRef(env, clazz, callback);
-    // checkWeakGlobalRef(env, clazz);
-    env->DeleteLocalRef(clazz);
-}
-
 jobjectArray visitClassLoadersByRootVisitor(JNIEnv *env) {
-    auto VisitRoots = (void (*)(void *, void *)) plt_dlsym("_ZN3art9JavaVMExt10VisitRootsEPNS_11RootVisitorE", nullptr);
-#ifdef DEBUG
-    LOGI("VisitRoots: %p", VisitRoots);
-#endif
-    if (VisitRoots == nullptr) {
-        return nullptr;
-    }
-
-    auto SweepJniWeakGlobals = (void (*)(void *, void *)) plt_dlsym("_ZN3art9JavaVMExt19SweepJniWeakGlobalsEPNS_15IsMarkedVisitorE", nullptr);
-#ifdef DEBUG
-    LOGI("SweepJniWeakGlobals: %p", SweepJniWeakGlobals);
-#endif
-
     JavaVM *jvm;
     env->GetJavaVM(&jvm);
     jclass class_loader_class = env->FindClass("java/lang/ClassLoader");
     std::vector<jobject> class_loaders;
-    auto callback = [&](jobject o) {
-        class_loaders.push_back(o);
+    auto callback = [&](art::mirror::Object* o) {
+        class_loaders.push_back(JNIEnvExt::From(env)->NewLocalRef(o));
     };
     {
         ClassLoaderVisitor visitor(env, class_loader_class, callback);
-        VisitRoots(jvm, &visitor);
+        JavaVMExt::From(jvm)->VisitRoots(&visitor);
     }
-    if (SweepJniWeakGlobals != nullptr) {
-        WeakClassLoaderVisitor visitor(env, class_loader_class, callback);
-        SweepJniWeakGlobals(jvm, &visitor);
-    }
+    WeakClassLoaderVisitor visitor(env, class_loader_class, callback);
+    JavaVMExt::From(jvm)->SweepJniWeakGlobals(&visitor);
     auto arr = env->NewObjectArray(class_loaders.size(), class_loader_class, nullptr);
     for (auto i = 0; i < class_loaders.size(); i++) {
         auto o = class_loaders[i];
-        env->SetObjectArrayElement(arr, i, newLocalRef(env,  o));
-        deleteLocalRef(env, o);
+        env->SetObjectArrayElement(arr, i, o);
+        JNIEnvExt::From(env)->DeleteLocalRef(o);
+    }
+    return arr;
+}
+
+bool InitClassLoaders(elf_parser::Elf &art) {
+    bool success = true;
+    if (!JNIEnvExt::Init(art)) {
+        LOGE("JNIEnvExt init failed");
+        success = false;
+    }
+    if (JavaVMExt::Init(art)) {
+        LOGE("JavaVMExt init failed");
+        success = false;
+    }
+    return success;
+}
+
+extern "C"
+JNIEXPORT jobjectArray JNICALL
+Java_io_github_a13e300_tools_NativeUtils_getClassLoaders(JNIEnv *env, jclass clazz) {
+    return visitClassLoaders(env);
+}
+
+extern "C"
+JNIEXPORT jobjectArray JNICALL
+Java_io_github_a13e300_tools_NativeUtils_getClassLoaders2(JNIEnv *env, jclass clazz) {
+    return visitClassLoadersByRootVisitor(env);
+}
+
+struct GlobalRefVisitor : public art::SingleRootVisitor {
+private:
+    Callback callback_;
+public:
+    explicit GlobalRefVisitor(Callback&& callback) : callback_(callback) {}
+
+    void VisitRoot(art::mirror::Object *root, const art::RootInfo &info) final {
+        callback_(root);
+    }
+};
+
+extern "C"
+JNIEXPORT jobjectArray JNICALL
+Java_io_github_a13e300_tools_NativeUtils_getGlobalRefs(JNIEnv *env, jclass, jclass clazz) {
+    JavaVM *jvm;
+    env->GetJavaVM(&jvm);
+
+    std::vector<jobject> objects;
+    GlobalRefVisitor visitor{[&](art::mirror::Object* o) {
+        auto obj = JNIEnvExt::From(env)->NewLocalRef(o);
+        if (!clazz || env->IsInstanceOf(obj, clazz))
+            objects.push_back(obj);
+        else
+            JNIEnvExt::From(env)->DeleteLocalRef(obj);
+    }};
+
+    JavaVMExt::From(jvm)->VisitRoots(&visitor);
+
+    if (clazz == nullptr) {
+        clazz = env->FindClass("java/lang/Object");
+    }
+
+    auto arr = env->NewObjectArray(static_cast<jsize>(objects.size()), clazz, nullptr);
+    for (auto i = 0; i < objects.size(); i++) {
+        auto o = objects[i];
+        env->SetObjectArrayElement(arr, i, o);
+        JNIEnvExt::From(env)->DeleteLocalRef(o);
     }
     return arr;
 }

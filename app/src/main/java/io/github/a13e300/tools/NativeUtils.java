@@ -4,11 +4,15 @@ import android.os.Build;
 import android.os.Debug;
 import android.util.Log;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Member;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+
 public class NativeUtils {
     static {
         try {
             System.loadLibrary("stethox");
-            Log.d("StethoX", "native init = " + initNative());
         } catch (Throwable t) {
             Log.e("StethoX", "failed to load native library", t);
         }
@@ -17,12 +21,12 @@ public class NativeUtils {
     private static boolean jvmtiAttached = false;
 
     public static native ClassLoader[] getClassLoaders();
-    public static native boolean initNative();
 
     public static native ClassLoader[] getClassLoaders2();
 
     private static native void nativeAllowDebugging();
-    private static native void nativeSetJavaDebug(boolean allow);
+    private static native int nativeSetJavaDebug(boolean allow);
+    private static native void nativeRestoreJavaDebug(int orig);
 
     private static void ensureJvmTi() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
@@ -31,14 +35,14 @@ public class NativeUtils {
         synchronized (NativeUtils.class) {
             if (jvmtiAttached) return;
             nativeAllowDebugging();
-            nativeSetJavaDebug(true);
+            var orig = nativeSetJavaDebug(true);
             try {
                 Debug.attachJvmtiAgent("libstethox.so", "", NativeUtils.class.getClassLoader());
             } catch (Throwable t) {
                 Logger.e("load jvmti", t);
                 throw new UnsupportedOperationException("load failed", t);
             } finally {
-                nativeSetJavaDebug(false);
+                nativeRestoreJavaDebug(orig);
             }
             jvmtiAttached = true;
         }
@@ -85,5 +89,51 @@ public class NativeUtils {
         return getFrameVarsNative(nframe);
     }
 
+    public static native Object[] getGlobalRefs(Class<?> clazz);
 
+    public static native Member getCLInit(Class<?> clazz);
+
+    private static native Object invokeNonVirtualInternal(Method method, Class<?> target, byte[] types, Object thiz, Object[] args) throws InvocationTargetException;
+
+    private static byte typeId(Class<?> type) {
+        if (type == int.class) {
+            return 0;
+        } else if (type == long.class) {
+            return 1;
+        } else if (type == short.class) {
+            return 2;
+        } else if (type == byte.class) {
+            return 3;
+        } else if (type == char.class) {
+            return 4;
+        } else if (type == boolean.class) {
+            return 5;
+        } else if (type == float.class) {
+            return 6;
+        } else if (type == double.class) {
+            return 7;
+        } else if (type == Void.class) {
+            return 9;
+        }
+        return 8;
+    }
+
+    public static Object invokeNonVirtual(Method method, Object thiz, Object ...args) throws InvocationTargetException {
+        if (thiz == null) throw new NullPointerException("this == null");
+        var modifier = method.getModifiers();
+        if (Modifier.isStatic(modifier)) throw new IllegalArgumentException("expected instance method, got " + method);
+        if (Modifier.isAbstract(modifier)) throw new IllegalArgumentException("cannot invoke abstract method " + method);
+        var clazz = method.getDeclaringClass();
+        if (!clazz.isInstance(thiz)) throw new IllegalArgumentException(thiz + " is not an instance of class " + clazz);
+
+        Class<?> retType = method.getReturnType();
+        Class<?>[] pTypes = method.getParameterTypes();
+        byte[] types;
+        types = new byte[pTypes.length + 1];
+        types[0] = typeId(retType);
+        for (int i = 0; i < pTypes.length; i++) {
+            types[i + 1] = typeId(pTypes[i]);
+        }
+        return invokeNonVirtualInternal(method, clazz, types, thiz, args);
+    }
 }

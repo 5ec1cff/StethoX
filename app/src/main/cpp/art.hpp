@@ -1,6 +1,5 @@
 #pragma once
-
-#include <stdint.h>
+#include "elf_parser.hpp"
 
 #ifndef NDEBUG
 #define ALWAYS_INLINE
@@ -19,20 +18,15 @@
 #define MANAGED PACKED(4)
 #define PACKED(x) __attribute__ ((__aligned__(x), __packed__))
 
-#include "utils.h"
-#include <string>
-#include "logging.h"
-#include "plt.h"
-
 namespace art {
-
     namespace mirror {
 
         class Object {
 
         };
 
-        class MANAGED ClassLoader : public Object {};
+        class MANAGED ClassLoader : public Object {
+        };
 
         template<class MirrorType>
         class ObjPtr {
@@ -117,28 +111,18 @@ namespace art {
         public:
             CompressedReference<MirrorType>() REQUIRES_SHARED(Locks::mutator_lock_)
                     : mirror::ObjectReference<false, MirrorType>(nullptr) {}
-
-            static CompressedReference<MirrorType> FromMirrorPtr(MirrorType *p)
-            REQUIRES_SHARED(Locks::mutator_lock_) {
-                return CompressedReference<MirrorType>(p);
-            }
-
-        private:
-            explicit CompressedReference(MirrorType *p) REQUIRES_SHARED(Locks::mutator_lock_)
-                    : mirror::ObjectReference<false, MirrorType>(p) {}
         };
     }
-
 
     class ClassLoaderVisitor {
     public:
         virtual ~ClassLoaderVisitor() {}
+
         virtual void Visit(mirror::ClassLoader *class_loader)
         REQUIRES_SHARED(Locks::classlinker_classes_lock_, Locks::mutator_lock_) = 0;
     };
 
     class RootInfo {
-
     };
 
     class RootVisitor {
@@ -162,8 +146,9 @@ namespace art {
         virtual void VisitRoots(mirror::Object ***roots, size_t count, const RootInfo &info)
         REQUIRES_SHARED(Locks::mutator_lock_) = 0;
 
-        virtual void VisitRoots(mirror::CompressedReference<mirror::Object> **roots, size_t count,
-                                const RootInfo &info)
+        virtual void
+        VisitRoots(mirror::CompressedReference<mirror::Object> **roots, size_t count,
+                   const RootInfo &info)
         REQUIRES_SHARED(Locks::mutator_lock_) = 0;
     };
 
@@ -200,91 +185,23 @@ namespace art {
 
     class ClassLinker {
     private:
-        static inline void(*visit_class_loader_)(void*, ClassLoaderVisitor*);
-    public:
-        static bool Init() {
-            auto VisitClassLoaders = (void(*)(void*, ClassLoaderVisitor*)) plt_dlsym("_ZNK3art11ClassLinker17VisitClassLoadersEPNS_18ClassLoaderVisitorE",
-                                                                                     nullptr);
-            LOGD("VisitClassLoaders: %p", VisitClassLoaders);
-            if (VisitClassLoaders == nullptr) return false;
-            visit_class_loader_ = VisitClassLoaders;
-            return true;
-        }
+        static void (*visit_class_loader_)(void *, ClassLoaderVisitor *);
 
-        inline void VisitClassLoaders(ClassLoaderVisitor* clv) {
-            if (visit_class_loader_ != nullptr) {
-                visit_class_loader_(this, clv);
-            }
-        }
+    public:
+        static bool Init(elf_parser::Elf &art);
+
+        void VisitClassLoaders(ClassLoaderVisitor *clv);
     };
 
     class Runtime {
     private:
-        inline static Runtime *instance_;
-        inline static unsigned int class_linker_offset_;
+        static Runtime *instance_;
     public:
-        static bool Init(JNIEnv *env) {
-            // https://github.com/frida/frida-java-bridge/blob/58030ace413a9104b8bf67f7396b22bf5d889e43/lib/android.js#L586
-#ifdef __LP64__
-            constexpr auto start_offset = 48;
-#else
-            constexpr auto start_offset = 50;
-#endif
-            constexpr auto end_offset = start_offset + 100;
-            constexpr auto std_string_size = 3;
-            auto sdk_int = GetAndroidApiLevel();
-            auto instance = *(Runtime**)plt_dlsym("_ZN3art7Runtime9instance_E", nullptr);
-            if (instance == nullptr) return false;
-            LOGD("instance %p", instance);
-            instance_ = instance;
-            JavaVM *vm;
-            env->GetJavaVM(&vm);
-            if (vm == nullptr) return false;
-            auto class_linker_offset = 0u;
-            for (auto offset = start_offset; offset != end_offset; offset ++) {
-                if (*((void**)instance + offset) == vm) {
-                    if (sdk_int >= __ANDROID_API_T__) {
-                        class_linker_offset = offset - 4;
-                    } else if (sdk_int >= __ANDROID_API_R__) {
-                        auto try_class_linker = [&](int class_linker_offset) {
-                            auto intern_table_offset = class_linker_offset - 1;
-                            constexpr auto start_offset = 25;
-                            constexpr auto end_offset = start_offset + 100;
-                            auto class_linker = *(void**)((void**)instance + class_linker_offset);
-                            auto intern_table = *(void**)((void**)instance + intern_table_offset);
-                            if (!is_pointer_valid(class_linker)) return false;
-                            for (auto i = start_offset; i != end_offset; i++) {
-                                auto p = (void**) class_linker + i;
-                                if (is_pointer_valid(p) && (*p) == intern_table) return true;
-                            }
-                            return false;
-                        };
-                        if (try_class_linker(offset - 3)) {
-                            class_linker_offset = offset - 3;
-                        } else if (try_class_linker(offset - 4)) {
-                            class_linker_offset = offset - 4;
-                        } else {
-                            return false;
-                        }
-                    } else if (sdk_int >= __ANDROID_API_Q__) {
-                        class_linker_offset = offset - 2;
-                    } else if (sdk_int >= __ANDROID_API_O_MR1__) {
-                        class_linker_offset = offset - std_string_size - 3;
-                    } else {
-                        class_linker_offset = offset - std_string_size - 2;
-                    }
-                }
-            }
-            if (class_linker_offset == 0u) return false;
-            class_linker_offset_ = class_linker_offset;
-            LOGD("class_linker_offset_ %u", class_linker_offset);
-            return ClassLinker::Init();
-        }
+        static bool Init(JNIEnv *env, elf_parser::Elf &art);
 
-        ClassLinker* getClassLinker() {
-            return *((ClassLinker**)this + class_linker_offset_);
-        }
-
+        ClassLinker* getClassLinker();
         inline static Runtime *Current() { return instance_; }
     };
+
+    bool Init(JNIEnv *env, elf_parser::Elf &art);
 }

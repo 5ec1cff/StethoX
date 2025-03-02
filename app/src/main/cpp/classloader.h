@@ -1,6 +1,6 @@
 #pragma once
 
 #include <jni.h>
+#include "elf_parser.hpp"
 
-jobjectArray visitClassLoaders(JNIEnv *env);
-jobjectArray visitClassLoadersByRootVisitor(JNIEnv *env);
+bool InitClassLoaders(elf_parser::Elf &art);
