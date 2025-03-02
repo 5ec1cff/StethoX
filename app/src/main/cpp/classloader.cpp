@@ -56,7 +56,7 @@ public:
         }
         symSweepJniWeakGlobals = reinterpret_cast<decltype(symSweepJniWeakGlobals)>(art.getSymbAddress("_ZN3art9JavaVMExt19SweepJniWeakGlobalsEPNS_15IsMarkedVisitorE"));
         if (!symSweepJniWeakGlobals) {
-            success = false;
+            // success = false;
             LOGE("not found: art::JavaVMExt::SweepJniWeakGlobals");
         }
         return success;

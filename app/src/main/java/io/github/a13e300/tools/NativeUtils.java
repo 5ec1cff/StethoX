@@ -24,9 +24,8 @@ public class NativeUtils {
 
     public static native ClassLoader[] getClassLoaders2();
 
-    private static native void nativeAllowDebugging();
-    private static native int nativeSetJavaDebug(boolean allow);
-    private static native void nativeRestoreJavaDebug(int orig);
+    private static native int nativeSetJavaDebug(boolean allow, int orig);
+    private static native boolean nativeSetJdwp(boolean allow, boolean orig);
 
     private static void ensureJvmTi() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
@@ -34,15 +33,16 @@ public class NativeUtils {
         }
         synchronized (NativeUtils.class) {
             if (jvmtiAttached) return;
-            nativeAllowDebugging();
-            var orig = nativeSetJavaDebug(true);
+            var origJdwp = nativeSetJdwp(true, true);
+            var orig = nativeSetJavaDebug(true, 0);
             try {
                 Debug.attachJvmtiAgent("libstethox.so", "", NativeUtils.class.getClassLoader());
             } catch (Throwable t) {
                 Logger.e("load jvmti", t);
                 throw new UnsupportedOperationException("load failed", t);
             } finally {
-                nativeRestoreJavaDebug(orig);
+                nativeSetJavaDebug(false, orig);
+                nativeSetJdwp(false, origJdwp);
             }
             jvmtiAttached = true;
         }
@@ -135,5 +135,9 @@ public class NativeUtils {
             types[i + 1] = typeId(pTypes[i]);
         }
         return invokeNonVirtualInternal(method, clazz, types, thiz, args);
+    }
+
+    public static void dummy() {
+
     }
 }

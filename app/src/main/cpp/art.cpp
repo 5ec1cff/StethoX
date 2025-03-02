@@ -211,13 +211,20 @@ namespace art {
     }
 
     void (*symSetJdwpAllowed)(bool) = nullptr;
+    bool (*symIsJdwpAllowed)() = nullptr;
 
     bool Init(JNIEnv *env, elf_parser::Elf &art) {
         bool success = true;
 
         symSetJdwpAllowed = reinterpret_cast<decltype(symSetJdwpAllowed)>(art.getSymbAddress("_ZN3art3Dbg14SetJdwpAllowedEb"));
-        if (symSetJdwpAllowed) {
+        if (!symSetJdwpAllowed) {
             LOGE("not found: art::Dbg::SetJdwpAllowed");
+            success = false;
+        }
+
+        symIsJdwpAllowed = reinterpret_cast<decltype(symIsJdwpAllowed)>(art.getSymbAddress("_ZN3art3Dbg13IsJdwpAllowedEv"));
+        if (!symIsJdwpAllowed) {
+            LOGE("not found: art::Dbg::IsJdwpAllowed");
             success = false;
         }
 
@@ -226,27 +233,30 @@ namespace art {
         return success;
     }
 
-    void SetJdwpAllowed() {
-        symSetJdwpAllowed(true);
+    inline void SetJdwpAllowed(bool allow) {
+        symSetJdwpAllowed(allow);
+    }
+
+    inline bool IsJdwpAllowed() {
+        return symIsJdwpAllowed();
     }
 }
 
 extern "C"
 JNIEXPORT jint JNICALL
 Java_io_github_a13e300_tools_NativeUtils_nativeSetJavaDebug(JNIEnv *, jclass,
-                                                            jboolean allow) {
-    return art::SetDebuggable(allow == JNI_TRUE);
+                                                            jboolean allow, jint orig) {
+    if (allow == JNI_TRUE) {
+        return art::SetDebuggable(true);
+    } else {
+        return art::SetDebuggableValue(orig);
+    }
 }
 
 extern "C"
-JNIEXPORT void JNICALL
-Java_io_github_a13e300_tools_NativeUtils_nativeRestoreJavaDebug(JNIEnv *, jclass, jint orig) {
-    art::SetDebuggableValue(orig);
-}
-
-extern "C"
-JNIEXPORT void JNICALL
-Java_io_github_a13e300_tools_NativeUtils_nativeAllowDebugging(JNIEnv *env, jclass clazz) {
-    art::SetJdwpAllowed();
-    LOGD("allow debug");
+JNIEXPORT jboolean JNICALL
+Java_io_github_a13e300_tools_NativeUtils_nativeSetJdwp(JNIEnv *env, jclass clazz, jboolean allow, jboolean orig) {
+    auto o = art::IsJdwpAllowed();
+    art::SetJdwpAllowed(allow == JNI_TRUE || orig == JNI_TRUE);
+    return o;
 }
