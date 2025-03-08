@@ -73,7 +73,6 @@ std::string to_string(jvmtiError e) {
     return Format("JVMTI Error %d (%s)", e, name);
 }
 
-
 extern "C"
 JNIEXPORT jint JNICALL
 Agent_OnAttach(JavaVM* vm, char *options, void *reserved) {

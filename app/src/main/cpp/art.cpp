@@ -14,21 +14,27 @@
 
 namespace art {
     void (*ClassLinker::visit_class_loader_)(void *, ClassLoaderVisitor *) = nullptr;
+    void (*ClassLinker::visit_classes_)(void*, ClassVisitor *) = nullptr;
+    RuntimeCallbacks* (*get_runtime_callbacks_)(Runtime*) = nullptr;
+    void (*add_class_load_callback_)(RuntimeCallbacks*, ClassLoadCallback*) = nullptr;
+    void (*remove_class_load_callback_)(RuntimeCallbacks*, ClassLoadCallback*) = nullptr;
 
     bool ClassLinker::Init(elf_parser::Elf &art) {
-        auto VisitClassLoaders = reinterpret_cast<void (*)(void *, ClassLoaderVisitor *)>(
-                art.getSymbAddress("_ZNK3art11ClassLinker17VisitClassLoadersEPNS_18ClassLoaderVisitorE")
-        );
-        LOGD("VisitClassLoaders: %p", VisitClassLoaders);
-        if (VisitClassLoaders == nullptr) return false;
-        visit_class_loader_ = VisitClassLoaders;
-        return true;
+        visit_class_loader_ = reinterpret_cast<decltype(visit_class_loader_)>(
+                art.getSymbAddress("_ZNK3art11ClassLinker17VisitClassLoadersEPNS_18ClassLoaderVisitorE"));
+        LOGD("VisitClassLoaders: %p", visit_class_loader_);
+        visit_classes_ = reinterpret_cast<decltype(visit_classes_)>(
+                art.getSymbAddress("_ZN3art11ClassLinker12VisitClassesEPNS_12ClassVisitorE"));
+        LOGD("VisitClasses: %p", visit_classes_);
+        return visit_class_loader_ && visit_classes_;
     }
 
     void ClassLinker::VisitClassLoaders(ClassLoaderVisitor *clv) {
-        if (visit_class_loader_ != nullptr) {
-            visit_class_loader_(this, clv);
-        }
+        if (visit_class_loader_) visit_class_loader_(this, clv);
+    }
+
+    void ClassLinker::VisitClasses(art::ClassVisitor *visitor) {
+        if (visit_classes_) visit_classes_(this, visitor);
     }
 
     // https://github.com/LSPosed/LSPlant/blob/08b65e436f766066f7aff1e35309aee0c656e3ba/lsplant/src/main/jni/art/runtime/runtime.cxx#L65
@@ -76,6 +82,27 @@ namespace art {
         }
         LOGD("instance %p", instance);
         instance_ = instance;
+
+        get_runtime_callbacks_ = reinterpret_cast<decltype(get_runtime_callbacks_)>(
+                art.getSymbAddress("_ZN3art7Runtime19GetRuntimeCallbacksEv"));
+        if (get_runtime_callbacks_ == nullptr) {
+            LOGE("not found: Runtime::GetRuntimeCallbacks");
+            success = false;
+        }
+
+        add_class_load_callback_ = reinterpret_cast<decltype(add_class_load_callback_)>(
+                art.getSymbAddress("_ZN3art16RuntimeCallbacks20AddClassLoadCallbackEPNS_17ClassLoadCallbackE"));
+        if (add_class_load_callback_ == nullptr) {
+            LOGE("not found: RuntimeCallbacks::AddClassLoadCallback");
+            success = false;
+        }
+
+        remove_class_load_callback_ = reinterpret_cast<decltype(remove_class_load_callback_)>(
+                art.getSymbAddress("_ZN3art16RuntimeCallbacks23RemoveClassLoadCallbackEPNS_17ClassLoadCallbackE"));
+        if (remove_class_load_callback_ == nullptr) {
+            LOGE("not found: RuntimeCallbacks::RemoveClassLoadCallback");
+            success = false;
+        }
 
         // get classLinker
 
@@ -177,6 +204,18 @@ namespace art {
         }
 
         return success;
+    }
+
+    RuntimeCallbacks *Runtime::GetRuntimeCallbacks() {
+        return get_runtime_callbacks_(this);
+    }
+
+    void RuntimeCallbacks::AddClassLoadCallback(art::ClassLoadCallback *cb) {
+        add_class_load_callback_(this, cb);
+    }
+
+    void RuntimeCallbacks::RemoveClassLoadCallback(art::ClassLoadCallback *cb) {
+        remove_class_load_callback_(this, cb);
     }
 
     ClassLinker* Runtime::getClassLinker() {

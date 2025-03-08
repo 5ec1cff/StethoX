@@ -11,7 +11,6 @@
 
 #include <memory>
 #include <string>
-#include <memory>
 #include <array>
 
 static bool initArt(JNIEnv *env) {
@@ -47,4 +46,15 @@ JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void*) {
     success &= Reflection::Init(env);
     success &= initArt(env);
     return success ? JNI_VERSION_1_4 : JNI_ERR;
+}
+
+struct OatFile {
+    virtual ~OatFile() = default;
+    const std::string location_;
+};
+
+extern "C"
+JNIEXPORT jstring JNICALL
+Java_io_github_a13e300_tools_NativeUtils_nativeReadOatPath(JNIEnv *env, jclass , jlong addr) {
+    return env->NewStringUTF(reinterpret_cast<OatFile*>(addr)->location_.c_str());
 }

@@ -7,6 +7,7 @@
 #include <functional>
 #include <utility>
 #include <vector>
+#include <memory>
 
 struct JNIEnvExt {
 private:
@@ -196,7 +197,7 @@ bool InitClassLoaders(elf_parser::Elf &art) {
         LOGE("JNIEnvExt init failed");
         success = false;
     }
-    if (JavaVMExt::Init(art)) {
+    if (!JavaVMExt::Init(art)) {
         LOGE("JavaVMExt init failed");
         success = false;
     }
@@ -254,4 +255,68 @@ Java_io_github_a13e300_tools_NativeUtils_getGlobalRefs(JNIEnv *env, jclass, jcla
         JNIEnvExt::From(env)->DeleteLocalRef(o);
     }
     return arr;
+}
+
+extern "C"
+JNIEXPORT void JNICALL
+Java_io_github_a13e300_tools_NativeUtils_visitClasses(JNIEnv *env, jclass clazz) {
+    class Visitor : public art::ClassVisitor {
+        JNIEnv *env_;
+        jmethodID getClassName;
+        bool operator()(art::mirror::ObjPtr<art::mirror::Class> klass) override {
+            auto ref = JNIEnvExt::From(env_)->NewLocalRef(klass.Ptr());
+            auto str = (jstring) env_->CallObjectMethod(ref, getClassName);
+            auto chars = env_->GetStringUTFChars(str, nullptr);
+            LOGD("class %s", chars);
+            env_->ReleaseStringUTFChars(str, chars);
+            JNIEnvExt::From(env_)->DeleteLocalRef(ref);
+            return true;
+        }
+    public :
+        explicit Visitor(JNIEnv* env) : env_(env) {
+            getClassName = env->GetMethodID(env->FindClass("java/lang/Class"), "getName", "()Ljava/lang/String;");
+        }
+    } v { env };
+    art::Runtime::Current()->getClassLinker()->VisitClasses(&v);
+}
+
+class MyCallback : public art::ClassLoadCallback {
+public:
+    JavaVM* vm;
+    jmethodID getClassName;
+
+    MyCallback(JNIEnv *env) {
+        env->GetJavaVM(&vm);
+        getClassName = env->GetMethodID(env->FindClass("java/lang/Class"), "getName", "()Ljava/lang/String;");
+    }
+
+    void ClassLoad(art::Handle<art::mirror::Class> klass) override {
+    }
+
+    void ClassPrepare(art::Handle<art::mirror::Class> temp_klass, art::Handle<art::mirror::Class> klass) override {
+        JNIEnv *env = nullptr;
+        vm->GetEnv((void**) &env, JNI_VERSION_1_4);
+        auto clz = JNIEnvExt::From(env)->NewLocalRef(klass.Get());
+        auto str = (jstring) env->CallObjectMethod(clz, getClassName);
+        auto chars = env->GetStringUTFChars(str, nullptr);
+        LOGD("prepared class %s", chars);
+        env->ReleaseStringUTFChars(str, chars);
+        JNIEnvExt::From(env)->DeleteLocalRef(clz);
+    }
+};
+
+extern "C"
+JNIEXPORT void JNICALL
+Java_io_github_a13e300_tools_NativeUtils_monitorClasses(JNIEnv *env, jclass clazz,
+                                                        jboolean enabled) {
+    static std::unique_ptr<art::ClassLoadCallback> callback;
+
+    if (!callback && enabled == JNI_TRUE) {
+        auto ptr = new MyCallback(env);
+        callback.reset(ptr);
+        art::Runtime::Current()->GetRuntimeCallbacks()->AddClassLoadCallback(ptr);
+    } else if (callback && enabled == JNI_FALSE) {
+        auto ptr = callback.release();
+        art::Runtime::Current()->GetRuntimeCallbacks()->RemoveClassLoadCallback(ptr);
+    }
 }

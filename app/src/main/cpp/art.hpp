@@ -28,12 +28,16 @@ namespace art {
         class MANAGED ClassLoader : public Object {
         };
 
+        class MANAGED Class : public Object {
+        };
+
         template<class MirrorType>
         class ObjPtr {
+            uintptr_t reference_;
 
         public:
             MirrorType *Ptr() const {
-                return nullptr;
+                return reinterpret_cast<MirrorType*>(reference_);
             }
 
         };
@@ -114,6 +118,60 @@ namespace art {
         };
     }
 
+    template<class MirrorType>
+    class PACKED(4) StackReference : public mirror::CompressedReference<MirrorType> {
+    };
+
+    class ValueObject {
+    };
+
+    template<class T>
+    class Handle : public ValueObject {
+    public:
+        constexpr Handle() : reference_(nullptr) {
+        }
+
+        constexpr ALWAYS_INLINE Handle(const Handle<T>& handle) = default;
+
+        ALWAYS_INLINE Handle<T>& operator=(const Handle<T>& handle) = default;
+
+        ALWAYS_INLINE T& operator*() const REQUIRES_SHARED(Locks::mutator_lock_) {
+            return *Get();
+        }
+
+        ALWAYS_INLINE T* operator->() const REQUIRES_SHARED(Locks::mutator_lock_) {
+            return Get();
+        }
+
+        ALWAYS_INLINE T* Get() const REQUIRES_SHARED(Locks::mutator_lock_) {
+            return static_cast<T*>(reference_->AsMirrorPtr());
+        }
+
+        ALWAYS_INLINE bool IsNull() const {
+            // It's safe to null-check it without a read barrier.
+            return reference_->IsNull();
+        }
+
+        ALWAYS_INLINE bool operator!=(std::nullptr_t) const {
+            return !IsNull();
+        }
+
+        ALWAYS_INLINE bool operator==(std::nullptr_t) const {
+            return IsNull();
+        }
+
+    protected:
+
+        StackReference<mirror::Object>* reference_;
+
+    private:
+        friend class BuildGenericJniFrameVisitor;
+        template<class S> friend class Handle;
+        friend class HandleScope;
+        template<class S> friend class HandleWrapper;
+        template<size_t kNumReferences> friend class StackHandleScope;
+    };
+
     class ClassLoaderVisitor {
     public:
         virtual ~ClassLoaderVisitor() {}
@@ -183,14 +241,66 @@ namespace art {
         virtual mirror::Object *IsMarked(mirror::Object *obj) = 0;
     };
 
+    class ClassVisitor {
+    public:
+        virtual ~ClassVisitor() {};
+        // Return true to continue visiting.
+        virtual bool operator()(mirror::ObjPtr<mirror::Class> klass) = 0;
+    };
+
     class ClassLinker {
     private:
         static void (*visit_class_loader_)(void *, ClassLoaderVisitor *);
+        static void (*visit_classes_)(void*, ClassVisitor*);
 
     public:
         static bool Init(elf_parser::Elf &art);
 
         void VisitClassLoaders(ClassLoaderVisitor *clv);
+        void VisitClasses(ClassVisitor *visitor);
+    };
+
+
+    class ClassLoadCallback {
+    public:
+        virtual ~ClassLoadCallback() {}
+
+        // Called immediately before beginning class-definition and immediately before returning from it.
+        virtual void BeginDefineClass() REQUIRES_SHARED(Locks::mutator_lock_) {}
+        virtual void EndDefineClass() REQUIRES_SHARED(Locks::mutator_lock_) {}
+
+        // If set we will replace initial_class_def & initial_dex_file with the final versions. The
+        // callback author is responsible for ensuring these are allocated in such a way they can be
+        // cleaned up if another transformation occurs. Note that both must be set or null/unchanged on
+        // return.
+        // Note: the class may be temporary, in which case a following ClassPrepare event will be a
+        //       different object. It is the listener's responsibility to handle this.
+        // Note: This callback is rarely useful so a default implementation has been given that does
+        //       nothing.
+        virtual void ClassPreDefine([[maybe_unused]] const char* descriptor,
+                                    [[maybe_unused]] Handle<mirror::Class> klass,
+                                    [[maybe_unused]] Handle<mirror::ClassLoader> class_loader,
+                                    [[maybe_unused]] void* /*const DexFile&*/ initial_dex_file,
+                                    [[maybe_unused]] void* /*const dex::ClassDef&*/ initial_class_def,
+                                    [[maybe_unused]] /*out*/ void* /*DexFile const***/ final_dex_file,
+                                    [[maybe_unused]] /*out*/ void* /*dex::ClassDef const** */ final_class_def)
+        REQUIRES_SHARED(Locks::mutator_lock_) {}
+
+        // A class has been loaded.
+        // Note: the class may be temporary, in which case a following ClassPrepare event will be a
+        //       different object. It is the listener's responsibility to handle this.
+        virtual void ClassLoad(Handle<mirror::Class> klass) REQUIRES_SHARED(Locks::mutator_lock_) = 0;
+
+        // A class has been prepared, i.e., resolved. As the ClassLoad event might have been for a
+        // temporary class, provide both the former and the current class.
+        virtual void ClassPrepare(Handle<mirror::Class> temp_klass,
+                                  Handle<mirror::Class> klass) REQUIRES_SHARED(Locks::mutator_lock_) = 0;
+    };
+
+    class RuntimeCallbacks {
+    public:
+        void AddClassLoadCallback(ClassLoadCallback* cb);
+        void RemoveClassLoadCallback(ClassLoadCallback* cb);
     };
 
     class Runtime {
@@ -201,6 +311,7 @@ namespace art {
 
         ClassLinker* getClassLinker();
         inline static Runtime *Current() { return instance_; }
+        RuntimeCallbacks* GetRuntimeCallbacks();
     };
 
     bool Init(JNIEnv *env, elf_parser::Elf &art);
