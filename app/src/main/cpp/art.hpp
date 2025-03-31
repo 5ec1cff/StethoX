@@ -303,6 +303,32 @@ namespace art {
         void RemoveClassLoadCallback(ClassLoadCallback* cb);
     };
 
+    class ArtMethod {
+    public:
+        void* GetEntryPoint();
+        void* GetData();
+        void SetEntryPoint(void* entry);
+        void SetData(void* data);
+
+        static bool Init(JNIEnv *env);
+    };
+
+    class Thread {
+    public:
+        static Thread* Current();
+    };
+
+    enum class CompilationKind {
+        kOsr,
+        kBaseline,
+        kOptimized,
+    };
+
+    class Jit {
+    public:
+        bool CompileMethod(ArtMethod* method, Thread* self, CompilationKind compilation_kind, bool prejit);
+    };
+
     class Runtime {
     private:
         static Runtime *instance_;
@@ -312,7 +338,48 @@ namespace art {
         ClassLinker* getClassLinker();
         inline static Runtime *Current() { return instance_; }
         RuntimeCallbacks* GetRuntimeCallbacks();
+        Jit* GetJit();
     };
 
     bool Init(JNIEnv *env, elf_parser::Elf &art);
+
+    class PACKED(4) ManagedStack {
+    public:
+        // Encodes the top quick frame (which must be at least 4-byte aligned)
+        // and a flag that marks the GenericJNI trampoline.
+        class TaggedTopQuickFrame {
+        public:
+            uintptr_t tagged_sp_;
+        private:
+        };
+
+        static_assert(sizeof(TaggedTopQuickFrame) == sizeof(uintptr_t),
+                      "TaggedTopQuickFrame size check");
+
+        TaggedTopQuickFrame tagged_top_quick_frame_;
+        ManagedStack *link_;
+        void* /*ShadowFrame */top_shadow_frame_;
+
+        inline void reset() {
+            tagged_top_quick_frame_.tagged_sp_ = 0;
+            link_ = nullptr;
+            top_shadow_frame_ = nullptr;
+        }
+    };
+
+    class ScopedHiddenApiAccess {
+    public:
+        explicit ScopedHiddenApiAccess(JNIEnv *env);
+        ~ScopedHiddenApiAccess();
+
+        inline bool Ok() const { return current_ != nullptr; }
+    private:
+        inline static size_t managed_stack_offset = 0;
+        Thread* current_ = nullptr;
+        ManagedStack backup_{};
+
+        inline ManagedStack* GetManagedStack() {
+            return reinterpret_cast<ManagedStack*>(reinterpret_cast<uintptr_t>(current_) + managed_stack_offset);
+        }
+    };
 }

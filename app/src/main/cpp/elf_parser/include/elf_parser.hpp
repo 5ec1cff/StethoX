@@ -10,6 +10,12 @@
 #include <functional>
 
 namespace elf_parser {
+    struct SymbolInfo {
+        uintptr_t value;
+        size_t size;
+        const char* name;
+    };
+
     class Elf {
         bool valid_{false};
         bool for_dynamic_{false};
@@ -127,7 +133,7 @@ namespace elf_parser {
 
         ElfW(Sym)* getSymByPrefix(std::string_view name) const;
 
-        void forEachSymbols(std::function<bool(const char*, ElfW(Sym)* sym)> &&fn) const;
+        void forEachSymbols(std::function<bool(const char*, const SymbolInfo& sym)> &&fn) const;
 
         ~Elf();
 

@@ -6,6 +6,8 @@ import android.os.Debug;
 import android.util.Log;
 
 import java.lang.reflect.Array;
+import java.lang.reflect.Executable;
+import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Member;
 import java.lang.reflect.Method;
@@ -15,12 +17,18 @@ import dalvik.annotation.optimization.FastNative;
 import dalvik.system.BaseDexClassLoader;
 
 public class NativeUtils {
+    private static final Field artMethodField;
     static {
+        Field field = null;
         try {
             System.loadLibrary("stethox");
+
+            field = Executable.class.getDeclaredField("artMethod");
+            field.setAccessible(true);
         } catch (Throwable t) {
             Log.e("StethoX", "failed to load native library", t);
         }
+        artMethodField = field;
     }
 
     private static boolean jvmtiAttached = false;
@@ -180,6 +188,96 @@ public class NativeUtils {
             throw new RuntimeException(t);
         }
         return result.toString();
+    }
+
+    private static native boolean nativeJitCompile(long artMethod, int compileKind, boolean prejit);
+
+    private static native long nativeGetMethodEntry(long artMethod);
+    private static native long nativeGetMethodData(long artMethod);
+    private static native String nativeGetAddrInfo(long addr);
+
+    private static long getArtMethod(Executable method) {
+        try {
+            return (long) artMethodField.get(method);
+        } catch (Throwable t) {
+            throw new RuntimeException(t);
+        }
+    }
+
+    public static long getMethodEntry(Executable method) {
+        return nativeGetMethodEntry(getArtMethod(method));
+    }
+
+    public static String getMethodEntryInfo(Executable method) {
+        return nativeGetAddrInfo(getMethodEntry(method));
+    }
+
+    public static long getMethodData(Executable method) {
+        return nativeGetMethodData(getArtMethod(method));
+    }
+
+    public static String getMethodDataInfo(Executable method) {
+        return nativeGetAddrInfo(getMethodData(method));
+    }
+
+    public static boolean jitCompile(Executable method, String compileKind) {
+        try {
+            int compileKindInt;
+            if ("osr".equals(compileKind)) {
+                compileKindInt = 0;
+            } else if ("baseline".equals(compileKind)) {
+                compileKindInt = 1;
+            } else if ("optimized".equals(compileKind)) {
+                compileKindInt = 2;
+            } else {
+                throw new IllegalArgumentException("unknown compile kind, should be one of: osr, baseline, optimized");
+            }
+
+            var artMethod = getArtMethod(method);
+
+            return nativeJitCompile(artMethod, compileKindInt, false);
+        } catch (Throwable t) {
+            throw new RuntimeException(t);
+        }
+    }
+
+    public static int a0() {
+        return 1;
+    }
+
+    public static int a1() {
+        return a0();
+    }
+
+    public static int a2() {
+        return a1() + 1;
+    }
+
+    public static int a3() {
+        return a2() + 2;
+    }
+
+    public static int a4() {
+        return a3() + 3;
+    }
+
+    static int theField;
+
+    static int getField1() {
+        return theField + 1;
+    }
+
+    static int getField2() {
+        return getField1() + 2;
+    }
+
+    static void printStack1() {
+        Log.d("a", "a", new Throwable());
+    }
+
+    static void printStack2() {
+        Log.d("b", "b", new Throwable());
+        printStack1();
     }
 
 /*

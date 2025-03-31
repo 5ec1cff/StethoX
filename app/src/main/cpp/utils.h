@@ -15,3 +15,4 @@ inline auto GetAndroidApiLevel() {
 }
 
 bool is_pointer_valid(void *p);
+bool is_pointer_valid(void *p, size_t len);

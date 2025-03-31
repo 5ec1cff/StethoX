@@ -18,6 +18,10 @@ namespace art {
     RuntimeCallbacks* (*get_runtime_callbacks_)(Runtime*) = nullptr;
     void (*add_class_load_callback_)(RuntimeCallbacks*, ClassLoadCallback*) = nullptr;
     void (*remove_class_load_callback_)(RuntimeCallbacks*, ClassLoadCallback*) = nullptr;
+    bool (*jit_compile_method_)(Jit*, ArtMethod*, Thread*, CompilationKind, bool) = nullptr;
+    Thread* (*thread_current_from_gdb_)() = nullptr;
+    size_t runtime_jit_offset = 0u;
+    size_t art_method_size = 0u;
 
     bool ClassLinker::Init(elf_parser::Elf &art) {
         visit_class_loader_ = reinterpret_cast<decltype(visit_class_loader_)>(
@@ -61,16 +65,46 @@ namespace art {
     inline static size_t java_debuggable_offset = -1;
     inline static size_t debug_state_offset = -1;
 
+    bool ArtMethod::Init(JNIEnv *env) {
+        auto throwable = env->FindClass("java/lang/Throwable");
+        auto getDeclaredConstructors = env->GetMethodID(
+                env->FindClass("java/lang/Class"),
+                "getDeclaredConstructors", "()[Ljava/lang/reflect/Constructor;"
+        );
+        auto artMethodField = env->GetFieldID(env->FindClass("java/lang/reflect/Executable"), "artMethod", "J");
+        auto constructors = (jobjectArray) env->CallObjectMethod(throwable, getDeclaredConstructors);
+        auto len = env->GetArrayLength(constructors);
+        if (len < 2) {
+            LOGE("throwable has less than 2 constructors");
+            return false;
+        }
+        auto c0 = env->GetObjectArrayElement(constructors, 0);
+        auto c1 = env->GetObjectArrayElement(constructors, 1);
+        auto a0 = env->GetLongField(c0, artMethodField);
+        auto a1 = env->GetLongField(c1, artMethodField);
+        art_method_size = a1 - a0;
+        LOGD("art method size %zu", art_method_size);
+        return true;
+    }
+
+    void ArtMethod::SetEntryPoint(void *entry) {
+        *(reinterpret_cast<void**>(reinterpret_cast<uintptr_t>(this + art_method_size)) - 1) = entry;
+    }
+
+    void *ArtMethod::GetEntryPoint() {
+        return *(reinterpret_cast<void**>(reinterpret_cast<uintptr_t>(this + art_method_size)) - 1);
+    }
+
+    void ArtMethod::SetData(void *data) {
+        *(reinterpret_cast<void**>(reinterpret_cast<uintptr_t>(this + art_method_size)) - 2) = data;
+    }
+
+    void *ArtMethod::GetData() {
+        return *(reinterpret_cast<void**>(reinterpret_cast<uintptr_t>(this + art_method_size)) - 2);
+    }
+
     Runtime *Runtime::instance_ = nullptr;
     bool Runtime::Init(JNIEnv *env, elf_parser::Elf &art) {
-        // https://github.com/frida/frida-java-bridge/blob/58030ace413a9104b8bf67f7396b22bf5d889e43/lib/android.js#L586
-#ifdef __LP64__
-        constexpr auto start_offset = 48;
-#else
-        constexpr auto start_offset = 50;
-#endif
-        constexpr auto end_offset = start_offset + 100;
-        constexpr auto std_string_size = 3;
         auto sdk_int = GetAndroidApiLevel();
 
         bool success = true;
@@ -104,13 +138,20 @@ namespace art {
             success = false;
         }
 
-        // get classLinker
-
         JavaVM *vm;
         env->GetJavaVM(&vm);
         if (vm) {
+            // get classLinker
+            // https://github.com/frida/frida-java-bridge/blob/58030ace413a9104b8bf67f7396b22bf5d889e43/lib/android.js#L586
+#ifdef __LP64__
+            constexpr auto kSearchClassLinkerStartOffset = 48;
+#else
+            constexpr auto kSearchClassLinkerStartOffset = 50;
+#endif
+            constexpr auto kSearchClassLinkerEndOffset = kSearchClassLinkerStartOffset + 100;
+            constexpr auto std_string_size = 3;
             auto class_linker_offset = 0u;
-            for (auto offset = start_offset; offset != end_offset; offset++) {
+            for (auto offset = kSearchClassLinkerStartOffset; offset != kSearchClassLinkerEndOffset; offset++) {
                 if (*((void **) instance + offset) == vm) {
                     if (sdk_int >= __ANDROID_API_T__) {
                         class_linker_offset = offset - 4;
@@ -153,6 +194,35 @@ namespace art {
             class_linker_offset_ = class_linker_offset;
             LOGD("class_linker_offset_ %u", class_linker_offset);
             success &= ClassLinker::Init(art);
+
+            // get jit_
+            // it should be under java_vm
+            auto jit_offset = 0u;
+            auto jit_vtable = (void*)((void**) art.getSymbAddress("_ZTVN3art3jit3JitE") + 2);
+#ifdef __LP64__
+            constexpr auto kSearchJitStartOffset = 0;
+#else
+            constexpr auto kSearchJitStartOffset = 0;
+#endif
+            constexpr auto kSearchJitEndOffset = kSearchJitStartOffset + 300;
+            for (auto offset = kSearchJitStartOffset; offset != kSearchJitEndOffset; offset++) {
+                auto p = (void***)instance + offset;
+                if (is_pointer_valid(p, sizeof(void*))) {
+                    if (is_pointer_valid(*p, sizeof(void*))) {
+                        LOGD("try off %zu *p=%p **p=%p jit_vtb=%p", offset, *p, **p, jit_vtable);
+                        if (**p == jit_vtable) {
+                            jit_offset = offset;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (jit_offset == 0) {
+                LOGE("failed to get jit offset");
+                success = false;
+            }
+            runtime_jit_offset = jit_offset;
+            LOGD("jit offset %zu", jit_offset);
         } else {
             success = false;
         }
@@ -203,7 +273,35 @@ namespace art {
             success = false;
         }
 
+        jit_compile_method_ = reinterpret_cast<decltype(jit_compile_method_)>(art.getSymbAddress("_ZN3art3jit3Jit13CompileMethodEPNS_9ArtMethodEPNS_6ThreadENS_15CompilationKindEb"));
+        if (!jit_compile_method_) {
+            LOGE("not found: Jit::CompileMethod");
+            success = false;
+        }
+
+        thread_current_from_gdb_ = reinterpret_cast<decltype(thread_current_from_gdb_)>(art.getSymbAddress("_ZN3art6Thread14CurrentFromGdbEv"));
+        if (!thread_current_from_gdb_) {
+            LOGE("not found: Thread::CurrentFromGdb");
+            success = false;
+        }
+
         return success;
+    }
+
+    Thread *Thread::Current() {
+        return thread_current_from_gdb_();
+    }
+
+    Jit* Runtime::GetJit() {
+        if (runtime_jit_offset == 0) {
+            return nullptr;
+        }
+        return *(reinterpret_cast<Jit**>(this) + runtime_jit_offset);
+    }
+
+    bool Jit::CompileMethod(art::ArtMethod *method, art::Thread *self,
+                            art::CompilationKind compilation_kind, bool prejit) {
+        return jit_compile_method_(this, method, self, compilation_kind, prejit);
     }
 
     RuntimeCallbacks *Runtime::GetRuntimeCallbacks() {
@@ -269,6 +367,8 @@ namespace art {
 
         success &= Runtime::Init(env, art);
 
+        success &= ArtMethod::Init(env);
+
         return success;
     }
 
@@ -278,6 +378,45 @@ namespace art {
 
     inline bool IsJdwpAllowed() {
         return symIsJdwpAllowed();
+    }
+
+    // this may break anything relies VisitStack (e.g. GC)
+    ScopedHiddenApiAccess::ScopedHiddenApiAccess(JNIEnv *env) {
+        auto thread = art::Thread::Current();
+        if (!thread) return;
+        if (managed_stack_offset == 0) {
+            auto p = reinterpret_cast<uintptr_t>(thread);
+            constexpr auto kMaxSearchOffset = 4096;
+            constexpr auto kAlign = sizeof(void*);
+            for (size_t i = 0; i < kMaxSearchOffset; i += kAlign) {
+                auto addr = reinterpret_cast<JNIEnv**>(p + i);
+                // LOGD("trying addr %p", addr);
+                if (is_pointer_valid(addr, sizeof(void*))) {
+                    // LOGD("offset %zu value %p env %p", i, *addr, env);
+                    if (*addr == env) {
+                        auto off = i - sizeof(void*) - sizeof(ManagedStack);
+                        LOGD("managed_stack offset=%zu", off);
+                        managed_stack_offset = off;
+                        break;
+                    }
+                }
+            }
+            if (managed_stack_offset == 0) {
+                LOGW("managed_stack offset not found!");
+                managed_stack_offset = -1;
+            }
+        }
+        if (managed_stack_offset != -1) {
+            current_ = thread;
+            auto &managed_stack = *GetManagedStack();
+            backup_ = managed_stack;
+            managed_stack.reset();
+        }
+    }
+
+    ScopedHiddenApiAccess::~ScopedHiddenApiAccess() {
+        if (!current_) return;
+        *GetManagedStack() = backup_;
     }
 }
 

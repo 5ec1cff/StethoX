@@ -16,6 +16,7 @@
             android:exported="true"
             tools:ignore="ExportedContentProvider"
             android:directBootAware="true"/>
+        <activity android:name=".HiddenApiActivity" android:exported="true" />
 
         <meta-data
             android:name="xposedmodule"

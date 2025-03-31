@@ -573,9 +573,14 @@ namespace elf_parser {
         return res;
     }
 
-    void Elf::forEachSymbols(std::function<bool(const char*, ElfW(Sym)* sym)> &&fn) const {
+    void Elf::forEachSymbols(std::function<bool(const char*, const SymbolInfo& sym)> &&fn) const {
+        MayInitLinearMap();
         for (auto &[name, sym]: symtabs_) {
-            if (!fn(name.data(), sym)) break;
+            SymbolInfo info;
+            info.name = offsetOf<const char *>(header_, symstr_ + sym->st_name);
+            info.value = GetLoadBias() + sym->st_value;
+            info.size = sym->st_size;
+            if (!fn(name.data(), info)) break;
         }
         if (gnu_debugdata_elf_) gnu_debugdata_elf_->forEachSymbols(std::move(fn));
     }
