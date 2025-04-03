@@ -5,6 +5,7 @@ import org.mozilla.javascript.Function;
 import org.mozilla.javascript.ScriptRuntime;
 import org.mozilla.javascript.Scriptable;
 import org.mozilla.javascript.ScriptableObject;
+import org.mozilla.javascript.Wrapper;
 import org.mozilla.javascript.annotations.JSFunction;
 import org.mozilla.javascript.annotations.JSGetter;
 import org.mozilla.javascript.annotations.JSSetter;
@@ -14,6 +15,7 @@ import java.lang.reflect.Member;
 
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedBridge;
+import io.github.a13e300.tools.Logger;
 
 public class HookParam extends ScriptableObject {
     XC_MethodHook.MethodHookParam mParam;
@@ -73,6 +75,11 @@ public class HookParam extends ScriptableObject {
     @JSSetter
     public static void setResult(Scriptable thisObj, Object value) {
         var p = (HookParam) thisObj;
+        Logger.d("result=" + value);
+        if (value instanceof Wrapper) {
+            value = ((Wrapper) value).unwrap();
+            Logger.d("unwrap result=" + value);
+        }
         p.mParam.setResult(value);
         p.mInvoked = true;
     }
