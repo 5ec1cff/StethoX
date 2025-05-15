@@ -37,7 +37,7 @@ android {
     }
     defaultConfig {
         applicationId = "io.github.a13e300.tools.stethox"
-        minSdk = 24
+        minSdk = 26
         targetSdk = 35
         versionCode = 2
         versionName = "1.0.2"

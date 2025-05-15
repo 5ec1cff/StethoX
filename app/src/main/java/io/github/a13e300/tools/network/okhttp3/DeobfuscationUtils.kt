@@ -13,13 +13,13 @@ fun deobfOkhttp3(cl: ClassLoader): NameMap {
             }
         }
         require(classRealInterceptorChain.size == 1) { "require only one RealInterceptorChain, found ${classRealInterceptorChain.size}" }
-        val fieldInterceptors = classRealInterceptorChain[0].getFields().findField {
+        val fieldInterceptors = classRealInterceptorChain[0].fields.findField {
             matcher {
                 type = "java.util.List"
             }
         }
         require(fieldInterceptors.size == 1) { "require only one Interceptors field, found ${fieldInterceptors.size}" }
-        map.putClass("okhttp3.internal.http.RealInterceptorChain", classRealInterceptorChain[0].className)
+        map.putClass("okhttp3.internal.http.RealInterceptorChain", classRealInterceptorChain[0].name)
         map.putField("okhttp3.internal.http.RealInterceptorChain", "interceptors", fieldInterceptors[0].name)
     }
     return map

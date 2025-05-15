@@ -2,10 +2,10 @@
 agp = "8.7.2"
 annotation = "1.9.1"
 api = "82"
-dexkit = "2.0.0-rc4"
+dexkit = "2.0.4"
 dexmaker = "2.28.3"
 kotlin = "2.0.20"
-rhino = "1.7.15-SNAPSHOT"
+rhino = "1.8.1-SNAPSHOT"
 stetho = "1.0-alpha-1"
 
 [plugins]
