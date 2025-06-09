@@ -13,5 +13,9 @@ public class ActivityThread {
         throw new RuntimeException("STUB");
     }
 
+    public ContextImpl getSystemContext() {
+        throw new RuntimeException("STUB");
+    }
+
     private static class ApplicationThread implements IApplicationThread {}
 }

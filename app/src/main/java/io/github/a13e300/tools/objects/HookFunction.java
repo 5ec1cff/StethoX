@@ -309,6 +309,9 @@ public class HookFunction extends BaseFunction {
             + "    You can also call hook.clear() to clear all hooks, call hook.stat() to print all hooks.\n"
             + "    When you disconnected from the console, all hooks are automatically removed\n"
             + "  Utils:\n"
+            + "    packagesCL(): get classloaders of all loaded packages\n"
+            + "    usePackage(pkg): use pkg cl\n"
+            + "    currentPkg(pkg): get current package of current cl\n"
             + "    getStackTrace()\n"
             + "    printStackTrace() / pst()\n"
             + "    findStackTrace(obj) / fst(obj): find stack trace and print, such as View\n"
@@ -496,5 +499,34 @@ public class HookFunction extends BaseFunction {
     @JSFunction
     public static Class<?>[] getAssignableClasses(Context cx, Scriptable thisObj, Object[] args, Function funObj) throws Throwable {
         return ((HookFunction) thisObj).getAssignableClasses(args);
+    }
+
+    @JSFunction
+    public static Object packagesCL(Context cx, Scriptable thisObj, Object[] args, Function funObj) throws Throwable {
+        return StethoxAppInterceptor.classLoaderMap;
+    }
+
+    @JSFunction
+    public static void usePackage(Context cx, Scriptable thisObj, Object[] args, Function funObj) throws Throwable {
+        ((HookFunction) thisObj).usePackage(args[0].toString());
+    }
+
+    private void usePackage(String pkg) {
+        mClassLoader = StethoxAppInterceptor.classLoaderMap.get(pkg);
+    }
+
+    @JSFunction
+    public static Object currentPkg(Context cx, Scriptable thisObj, Object[] args, Function funObj) throws Throwable {
+        return ((HookFunction) thisObj).currentPkg();
+    }
+
+    private String currentPkg() {
+        if (mClassLoader == null) return null;
+        for (var entry : StethoxAppInterceptor.classLoaderMap.entrySet()) {
+            if (entry.getValue().equals(mClassLoader)) {
+                return entry.getKey();
+            }
+        }
+        return null;
     }
 }

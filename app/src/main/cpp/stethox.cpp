@@ -45,7 +45,8 @@ JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void*) {
     bool success = true;
     success &= Reflection::Init(env);
     success &= initArt(env);
-    return success ? JNI_VERSION_1_4 : JNI_ERR;
+    LOGD("init success=%s", success ? "true" : "false");
+    return JNI_VERSION_1_4;
 }
 
 struct OatFile {

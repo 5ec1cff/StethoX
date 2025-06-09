@@ -59,6 +59,15 @@ echo '<processname>' > /data/local/tmp/stethox_suspend
 rm /data/local/tmp/stethox_suspend
 ```
 
+## System Server
+
+If you need to inspect system server, apply these two SELinux rules:
+
+```
+allow adbd system_server unix_stream_socket *
+allow system_server apk_data_file file *
+```
+
 ## ATTENTION
 
 Never leave this Module enabled or installed on day to day use.
@@ -121,6 +130,15 @@ setprop debug.stethox.suspend ''
 echo '<processname>' > /data/local/tmp/stethox_suspend
 # clear
 rm /data/local/tmp/stethox_suspend
+```
+
+## 系统服务
+
+如需对系统服务使用，请应用(apply)以下两条 selinux 规则：
+
+```
+allow adbd system_server unix_stream_socket *
+allow system_server apk_data_file file *
 ```
 
 ## 注意

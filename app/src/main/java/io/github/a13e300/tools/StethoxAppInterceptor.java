@@ -1,6 +1,5 @@
 package io.github.a13e300.tools;
 
-import android.annotation.SuppressLint;
 import android.app.ActivityThread;
 import android.app.Application;
 import android.app.IActivityManager;
@@ -27,11 +26,14 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
 
-import de.robv.android.xposed.IXposedHookZygoteInit;
+import de.robv.android.xposed.IXposedHookLoadPackage;
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
+import de.robv.android.xposed.callbacks.XC_LoadPackage;
 import io.github.a13e300.tools.objects.FindStackTraceFunction;
 import io.github.a13e300.tools.objects.GetStackTraceFunction;
 import io.github.a13e300.tools.objects.HookFunction;
@@ -42,11 +44,13 @@ import io.github.a13e300.tools.objects.PrintStackTraceFunction;
 import io.github.a13e300.tools.objects.RunOnHandlerFunction;
 import io.github.a13e300.tools.objects.UnhookFunction;
 
-public class StethoxAppInterceptor implements IXposedHookZygoteInit {
+public class StethoxAppInterceptor implements IXposedHookLoadPackage {
 
+    private boolean firstHandleLoadPackage = true;
     private boolean initialized = false;
     private boolean mWaiting = false;
     public static ClassLoader mClassLoader = null;
+    public static Map<String, ClassLoader> classLoaderMap = new HashMap<>();
 
     private synchronized void cont(ScriptableObject ignore) {
         if (mWaiting) {
@@ -55,71 +59,80 @@ public class StethoxAppInterceptor implements IXposedHookZygoteInit {
         }
     }
 
-    private synchronized void initializeStetho(Context context) throws InterruptedException {
+    private synchronized void initializeStetho(Context context, boolean system) throws InterruptedException {
         if (initialized) return;
-        var packageName = context.getPackageName();
-        var a = (IApplicationThread) ActivityThread.currentActivityThread().getApplicationThread();
-        var am = IActivityManager.Stub.asInterface(ServiceManager.getService("activity"));
-        if (BuildConfig.APPLICATION_ID.equals(packageName) || BuildConfig.APPLICATION_ID.equals(Utils.getProcessName())) {
-            initialized = true;
-            return;
-        }
+        IActivityManager am = null;
+        IApplicationThread a = null;
+
+        String packageName = "android";
 
         var processName = Utils.getProcessName();
         Logger.d("Install Stetho: " + packageName + " proc=" + processName);
         var suspendRequested = false;
 
-        try {
-            var packages = SystemProperties.get("debug.stethox.suspend");
-            if (Arrays.asList(packages.split(",")).contains(processName)) {
-                suspendRequested = true;
-                Logger.d("suspend requested b prop");
+        if (!system) {
+            packageName = context.getPackageName();
+            a = ActivityThread.currentActivityThread().getApplicationThread();
+            am = IActivityManager.Stub.asInterface(ServiceManager.getService("activity"));
+            if (BuildConfig.APPLICATION_ID.equals(packageName)) {
+                initialized = true;
+                return;
             }
-        } catch (Throwable t) {
-            Logger.e("get suspend prop", t);
-        }
 
-        if (!suspendRequested) {
             try {
-                var file = new File("/data/local/tmp/stethox_suspend");
-                if (file.canRead()) {
-                    var bytes = new byte[(int) file.length()];
-                    try (var is = new FileInputStream(file)) {
-                        is.read(bytes);
-                    }
-                    var str = new String(bytes, StandardCharsets.UTF_8);
-                    if (Arrays.asList(str.split("\n")).contains(processName)) {
-                        suspendRequested = true;
-                        Logger.d("suspend requested by file");
-                    }
+                var packages = SystemProperties.get("debug.stethox.suspend");
+                if (Arrays.asList(packages.split(",")).contains(processName)) {
+                    suspendRequested = true;
+                    Logger.d("suspend requested b prop");
                 }
             } catch (Throwable t) {
-                Logger.e("get suspend file", t);
+                Logger.e("get suspend prop", t);
             }
-        }
 
-        if (!suspendRequested) {
-            try {
-                var r = context.getContentResolver().call(
-                        Uri.parse("content://io.github.a13e300.tools.stethox.suspend"),
-                        "process_started", processName, null
-                );
-                if (r != null && r.getBoolean("suspend", false)) {
-                    suspendRequested = true;
-                    Logger.d("suspend requested by provider");
+            if (!suspendRequested) {
+                try {
+                    var file = new File("/data/local/tmp/stethox_suspend");
+                    if (file.canRead()) {
+                        var bytes = new byte[(int) file.length()];
+                        try (var is = new FileInputStream(file)) {
+                            is.read(bytes);
+                        }
+                        var str = new String(bytes, StandardCharsets.UTF_8);
+                        if (Arrays.asList(str.split("\n")).contains(processName)) {
+                            suspendRequested = true;
+                            Logger.d("suspend requested by file");
+                        }
+                    }
+                } catch (Throwable t) {
+                    Logger.e("get suspend file", t);
                 }
-            } catch (IllegalArgumentException e) {
-                Logger.e("failed to find suspend provider, please ensure module process without restriction", e);
             }
-        }
 
-        if (suspendRequested) {
-            mWaiting = true;
-            Stetho.setSuspend(true);
+            if (!suspendRequested) {
+                try {
+                    var r = context.getContentResolver().call(
+                            Uri.parse("content://io.github.a13e300.tools.stethox.suspend"),
+                            "process_started", processName, null
+                    );
+                    if (r != null && r.getBoolean("suspend", false)) {
+                        suspendRequested = true;
+                        Logger.d("suspend requested by provider");
+                    }
+                } catch (IllegalArgumentException e) {
+                    Logger.e("failed to find suspend provider, please ensure module process without restriction", e);
+                }
+            }
+
+            if (suspendRequested) {
+                mWaiting = true;
+                Stetho.setSuspend(true);
+            }
         }
 
         try {
-            mClassLoader = context.getClassLoader();
+            var cl = system ? mClassLoader : context.getClassLoader();
+            mClassLoader = cl;
+            classLoaderMap.put(packageName, cl);
         } catch (Throwable t) {
             Logger.e("failed to get classloader for context", t);
         }
@@ -206,28 +219,39 @@ public class StethoxAppInterceptor implements IXposedHookZygoteInit {
                 ).build()
         );
         initialized = true;
-        if (mWaiting) {
-            try {
-                am.showWaitingForDebugger(a, true);
-            } catch (Throwable t) {
-                Logger.e("failed to show wait for debugger", t);
-            }
-            wait();
-            mWaiting = false;
-            try {
-                am.showWaitingForDebugger(a, false);
-            } catch (Throwable t) {
-                Logger.e("failed to close wait for debugger", t);
+        if (!system) {
+            if (mWaiting) {
+                try {
+                    am.showWaitingForDebugger(a, true);
+                } catch (Throwable t) {
+                    Logger.e("failed to show wait for debugger", t);
+                }
+                wait();
+                mWaiting = false;
+                try {
+                    am.showWaitingForDebugger(a, false);
+                } catch (Throwable t) {
+                    Logger.e("failed to close wait for debugger", t);
+                }
             }
         }
     }
 
-    @SuppressLint("PrivateApi")
     @Override
-    public void initZygote(StartupParam startupParam) throws Throwable {
-        XposedBridge.log("initZygote");
-        // initWithMakeApplication();
-        initWithAttach();
+    public void handleLoadPackage(XC_LoadPackage.LoadPackageParam lpparam) throws Throwable {
+        classLoaderMap.put(lpparam.packageName, lpparam.classLoader);
+        if (firstHandleLoadPackage) {
+            if ("android".equals(lpparam.packageName) && "android".equals(lpparam.processName)) {
+                XposedBridge.log("StethoX init for system server");
+                mClassLoader = lpparam.classLoader;
+                var context = (Context) ActivityThread.currentActivityThread().getSystemContext();
+                initializeStetho(context, true);
+            } else {
+                XposedBridge.log("StethoX init for " + lpparam.packageName + " proc=" + lpparam.processName);
+                initWithAttach();
+            }
+            firstHandleLoadPackage = false;
+        }
     }
 
     private void initWithAttachBaseContext() {
@@ -238,7 +262,7 @@ public class StethoxAppInterceptor implements IXposedHookZygoteInit {
                 var context = (Application) param.thisObject;
                 XposedBridge.log("context " + context);
                 if (context == null) return;
-                initializeStetho(context);
+                initializeStetho(context, false);
             }
         });
     }
@@ -251,7 +275,7 @@ public class StethoxAppInterceptor implements IXposedHookZygoteInit {
                 var context = (Application) param.thisObject;
                 XposedBridge.log("context " + context);
                 if (context == null) return;
-                initializeStetho(context);
+                initializeStetho(context, false);
             }
         });
     }
@@ -282,7 +306,7 @@ public class StethoxAppInterceptor implements IXposedHookZygoteInit {
                         var context = (Application) param.getResult();
                         XposedBridge.log("context " + context);
                         if (context == null) return;
-                        initializeStetho(context);
+                        initializeStetho(context, false);
                     }
                 }
         );
