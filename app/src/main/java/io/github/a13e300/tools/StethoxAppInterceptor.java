@@ -17,6 +17,7 @@ import com.facebook.stetho.Stetho;
 import com.facebook.stetho.rhino.JsRuntimeReplFactoryBuilder;
 
 import org.mozilla.javascript.BaseFunction;
+import org.mozilla.javascript.NativeJavaPackage;
 import org.mozilla.javascript.Scriptable;
 import org.mozilla.javascript.ScriptableObject;
 
@@ -212,6 +213,50 @@ public class StethoxAppInterceptor implements IXposedHookLoadPackage {
                                             @Override
                                             public Object call(org.mozilla.javascript.Context cx, Scriptable scope, Scriptable thisObj, Object[] args) {
                                                 return StethoxAppInterceptor.class.getClassLoader();
+                                            }
+                                        })
+                                        .addFunction("importer", new BaseFunction() {
+                                            @Override
+                                            public Object call(org.mozilla.javascript.Context cx, Scriptable scope, Scriptable thisObj, Object[] args) {
+                                                ClassLoader loader = null;
+                                                int packageNameIdx = 0;
+                                                if (args.length >= 1) {
+                                                    var arg0 = args[0];
+                                                    if (arg0 instanceof ClassLoader) {
+                                                        loader = (ClassLoader) arg0;
+                                                        packageNameIdx++;
+                                                    } else if (arg0 instanceof String) {
+                                                        var loaderOfName = classLoaderMap.get((String) arg0);
+                                                        if (loaderOfName == null) {
+                                                            throw new IllegalArgumentException("available packages:\n" + String.join("\n", classLoaderMap.keySet()));
+                                                        }
+                                                        packageNameIdx++;
+                                                    }
+                                                }
+                                                if (loader == null) {
+                                                    var hook = (HookFunction) ScriptableObject.getProperty(scope, "hook");
+                                                    loader = hook.getClassLoader();
+                                                }
+                                                String packageName;
+                                                if (args.length >= packageNameIdx + 1) {
+                                                    var argn = args[packageNameIdx];
+                                                    if (argn instanceof String) {
+                                                        packageName = (String) argn;
+                                                    } else {
+                                                        packageName = "";
+                                                    }
+                                                } else {
+                                                    packageName = "";
+                                                }
+                                                ClassLoader finalLoader = loader;
+                                                var javaPackage = new NativeJavaPackage(packageName, finalLoader) {
+                                                    @Override
+                                                    public String toString() {
+                                                        return "Importer [classloader=" + finalLoader + ", package=" + packageName + "]";
+                                                    }
+                                                };
+                                                javaPackage.setParentScope(scope);
+                                                return javaPackage;
                                             }
                                         })
                                         .build()

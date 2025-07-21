@@ -59,7 +59,7 @@ public class HookFunction extends BaseFunction {
         return "HookFunction";
     }
 
-    synchronized ClassLoader getClassLoader() {
+    public synchronized ClassLoader getClassLoader() {
         if (mClassLoader == null) {
             ClassLoader cl = StethoxAppInterceptor.mClassLoader;
             if (cl == null) return ClassLoader.getSystemClassLoader();
@@ -331,7 +331,14 @@ public class HookFunction extends BaseFunction {
             + "      Get all classes in the vm, which is assignable to `targetClass`.\n"
             + "      `targetClass` can be a Class object or String, like `getObjectsOfClass`\n"
             + "      `classLoader` can be a ClassLoader object, If it is specified, the the result\n"
-            + "      will be filtered out to classes in that classloader.\n";
+            + "      will be filtered out to classes in that classloader.\n"
+            + "    importer([classLoader/packageName, ] initialPackage)\n"
+            + "      Create an importer for host packages to access their packages conveniently\n"
+            + "      For example, if class `com.example.MainActivity` in the host package, \n"
+            + "      you can use `importer(com.example)` to get the `com.example` package, or \n"
+            + "      use `importer(com.example.MainActivity)` to get the `MainActivity`  \n"
+            + "      You can also use rhino's `importPackage` or `importClass` to import them to\n"
+            + "      global namespace. For example: importClass(importer().com.example.MainActivity)\n";
 
     @JSFunction
     public static String toString(Context cx, Scriptable thisObj, Object[] args, Function funObj) {
