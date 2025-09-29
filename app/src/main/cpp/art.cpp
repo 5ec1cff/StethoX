@@ -1,6 +1,5 @@
 #include <jni.h>
 
-#include "art.hpp"
 #include "logging.h"
 
 #include "utils.h"
@@ -11,6 +10,9 @@
 #include <memory>
 #include <array>
 #include "art.hpp"
+#include <linux/futex.h>
+#include <sys/syscall.h>
+#include <unistd.h>
 
 namespace art {
     void (*ClassLinker::visit_class_loader_)(void *, ClassLoaderVisitor *) = nullptr;
@@ -18,6 +20,7 @@ namespace art {
     RuntimeCallbacks* (*get_runtime_callbacks_)(Runtime*) = nullptr;
     void (*add_class_load_callback_)(RuntimeCallbacks*, ClassLoadCallback*) = nullptr;
     void (*remove_class_load_callback_)(RuntimeCallbacks*, ClassLoadCallback*) = nullptr;
+    ReaderWriterMutex** classlinker_class_lock_ptr = nullptr;
 
     bool ClassLinker::Init(elf_parser::Elf &art) {
         visit_class_loader_ = reinterpret_cast<decltype(visit_class_loader_)>(
@@ -203,6 +206,12 @@ namespace art {
             success = false;
         }
 
+        success |= Thread::Init(art) && ReaderWriterMutex::Init(art);
+        classlinker_class_lock_ptr = reinterpret_cast<decltype(classlinker_class_lock_ptr)>(
+            art.getSymbAddress("_ZN3art5Locks25classlinker_classes_lock_E")
+            );
+        success |= classlinker_class_lock_ptr != nullptr;
+
         return success;
     }
 
@@ -278,6 +287,133 @@ namespace art {
 
     inline bool IsJdwpAllowed() {
         return symIsJdwpAllowed();
+    }
+
+    Thread* (*current_fn_)() = nullptr;
+    void (*artJniMethodStart)(Thread*) = nullptr;
+    void (*artJniMethodEnd)(Thread*) = nullptr;
+    bool Thread::Init(elf_parser::Elf& art) {
+        current_fn_ = reinterpret_cast<decltype(current_fn_)>(art.getSymbAddress("_ZN3art6Thread14CurrentFromGdbEv"));
+        if (!current_fn_) LOGE("_ZN3art6Thread14CurrentFromGdbEv not found");
+        artJniMethodStart = reinterpret_cast<decltype(artJniMethodStart)>(
+            art.getSymbAddress("artJniMethodStart"));
+        if (!artJniMethodStart) LOGE("artJniMethodStart not found");
+        artJniMethodEnd = reinterpret_cast<decltype(artJniMethodEnd)>(
+            art.getSymbAddress("artJniMethodEnd"));
+        if (!artJniMethodEnd) LOGE("artJniMethodEnd not found");
+        return current_fn_ && artJniMethodStart && artJniMethodEnd;
+    }
+
+    Thread *Thread::Current() {
+        return current_fn_();
+    }
+
+    void Thread::TransitionFromRunnableToSuspended(art::ThreadState new_state) {
+        artJniMethodStart(this);
+        SetState(new_state);
+    }
+
+    void Thread::TransitionFromSuspendedToRunnable() {
+        artJniMethodEnd(this);
+    }
+
+    bool reader_writer_mutex_initialized = false;
+    void (*reader_writer_mutex_ctor)(ReaderWriterMutex*, const char*, uint8_t) = nullptr;
+    void (*reader_writer_mutex_dtor)(ReaderWriterMutex*) = nullptr;
+    void (*reader_writer_mutex_HandleSharedLockContention)(ReaderWriterMutex*, Thread*, int32_t) = nullptr;
+    void (*reader_writer_mutex_ExclusiveLock)(ReaderWriterMutex*, Thread*) = nullptr;
+    void (*reader_writer_mutex_ExclusiveUnlock)(ReaderWriterMutex*, Thread*) = nullptr;
+    size_t reader_writer_mutex_state_offset = -1;
+
+    bool ReaderWriterMutex::Init(elf_parser::Elf &art) {
+        reader_writer_mutex_ctor = reinterpret_cast<decltype(reader_writer_mutex_ctor)>
+            (art.getSymbAddress("_ZN3art17ReaderWriterMutexC1EPKcNS_9LockLevelE"));
+        if (!reader_writer_mutex_ctor) LOGE("_ZN3art17ReaderWriterMutexC1EPKcNS_9LockLevelE not found");
+        reader_writer_mutex_dtor = reinterpret_cast<decltype(reader_writer_mutex_dtor)>
+            (art.getSymbAddress("_ZN3art17ReaderWriterMutexD1Ev"));
+        if (!reader_writer_mutex_dtor) LOGE("_ZN3art17ReaderWriterMutexD1Ev not found");
+        reader_writer_mutex_HandleSharedLockContention = reinterpret_cast<
+            decltype(reader_writer_mutex_HandleSharedLockContention)>
+            (art.getSymbAddress("_ZN3art17ReaderWriterMutex26HandleSharedLockContentionEPNS_6ThreadEi"));
+        if (!reader_writer_mutex_HandleSharedLockContention) LOGE("_ZN3art17ReaderWriterMutex26HandleSharedLockContentionEPNS_6ThreadEi not found");
+        reader_writer_mutex_ExclusiveLock = reinterpret_cast<decltype(reader_writer_mutex_ExclusiveLock)>
+            (art.getSymbAddress("_ZN3art17ReaderWriterMutex13ExclusiveLockEPNS_6ThreadE"));
+        if (!reader_writer_mutex_ExclusiveLock) LOGE("_ZN3art17ReaderWriterMutex13ExclusiveLockEPNS_6ThreadE not found");
+        reader_writer_mutex_ExclusiveUnlock = reinterpret_cast<decltype(reader_writer_mutex_ExclusiveUnlock)>
+        (art.getSymbAddress("_ZN3art17ReaderWriterMutex15ExclusiveUnlockEPNS_6ThreadE"));
+        if (!reader_writer_mutex_ExclusiveUnlock) LOGE("_ZN3art17ReaderWriterMutex15ExclusiveUnlockEPNS_6ThreadE not found");
+
+        if (!reader_writer_mutex_ctor || !reader_writer_mutex_dtor || !reader_writer_mutex_ExclusiveLock
+        || !reader_writer_mutex_ExclusiveUnlock || !reader_writer_mutex_HandleSharedLockContention) return false;
+
+        std::array<uint8_t, 256> buf{};
+        std::fill(buf.begin(), buf.end(), 0u);
+
+        auto ptr = reinterpret_cast<ReaderWriterMutex*>(buf.data());
+        reader_writer_mutex_ctor(ptr, "", 0);
+
+        reader_writer_mutex_ExclusiveLock(ptr, Thread::Current());
+        for (auto i = 0; i < 256; i += alignof(int32_t)) {
+            if (*reinterpret_cast<int32_t*>(buf.data() + i) == -1) {
+                reader_writer_mutex_state_offset = i;
+                LOGD("reader_writer_mutex_state_offset %zu", reader_writer_mutex_state_offset);
+                break;
+            }
+        }
+        reader_writer_mutex_ExclusiveUnlock(ptr, Thread::Current());
+
+        reader_writer_mutex_dtor(ptr);
+
+        return reader_writer_mutex_state_offset != -1;
+    }
+
+    // https://cs.android.com/android/platform/superproject/main/+/main:art/runtime/base/mutex-inl.h;l=187-233;drc=61197364367c9e404c7da6900658f1b16c42d0da
+
+    void ReaderWriterMutex::SharedLock(art::Thread *self) {
+        if (!reader_writer_mutex_initialized) [[unlikely]] return;
+        bool done = false;
+        auto &state_ = *reinterpret_cast<std::atomic<int32_t>*>(reinterpret_cast<uintptr_t>(this) + reader_writer_mutex_state_offset);
+        do {
+            int32_t cur_state = state_.load(std::memory_order_relaxed);
+            if (cur_state >= 0) [[likely]] {
+                // Add as an extra reader.
+                done = state_.compare_exchange_weak(cur_state, cur_state + 1, std::memory_order_acquire);
+            } else {
+                reader_writer_mutex_HandleSharedLockContention(this, self, cur_state);
+            }
+        } while (!done);
+    }
+
+    static inline int futex(volatile int *uaddr, int op, int val, const struct timespec *timeout,
+                            volatile int *uaddr2, int val3) {
+        return syscall(SYS_futex, uaddr, op, val, timeout, uaddr2, val3);
+    }
+
+    void ReaderWriterMutex::SharedUnlock(art::Thread *self) {
+        if (!reader_writer_mutex_initialized) [[unlikely]] return;
+
+        bool done = false;
+        auto &state_ = *reinterpret_cast<std::atomic<int32_t>*>(reinterpret_cast<uintptr_t>(this) + reader_writer_mutex_state_offset);
+        do {
+            int32_t cur_state = state_.load(std::memory_order_relaxed);
+            if (cur_state > 0) [[likely]] {
+                // Reduce state by 1 and impose lock release load/store ordering.
+                // Note, the num_contenders_ load below musn't reorder before the CompareAndSet.
+                done = state_.compare_exchange_weak(cur_state, cur_state - 1);
+                if (done && (cur_state - 1) == 0) {  // Weak CAS may fail spuriously.
+                    // if (num_contenders_.load(std::memory_order_seq_cst) > 0) {
+                    // Wake any exclusive waiters as there are now no readers.
+                    futex((int*) &state_, FUTEX_WAKE_PRIVATE, INT_MAX, nullptr, nullptr, 0);
+                    // }
+                }
+            } else {
+                // LOG(FATAL) << "Unexpected state_:" << cur_state << " for " << name_;
+            }
+        } while (!done);
+    }
+
+    ReaderWriterMutex* classlinker_classes_lock() {
+        return classlinker_class_lock_ptr ? *classlinker_class_lock_ptr : nullptr;
     }
 }
 

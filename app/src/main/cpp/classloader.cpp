@@ -112,8 +112,8 @@ public:
     MyClassLoaderVisitor(JNIEnv *env, Callback callback) : env_(env), callback_(std::move(callback)) {
     }
 
-    void Visit(art::mirror::ClassLoader *class_loader) override {
-        callback_(class_loader);
+    void Visit(art::ObjPtr<art::mirror::ClassLoader> class_loader) override {
+        callback_(class_loader.Ptr());
     }
 
 private:
@@ -122,10 +122,12 @@ private:
 };
 
 jobjectArray visitClassLoaders(JNIEnv *env) {
+    art::ScopedObjectAccess soa;
+    art::ReaderMutexLock mu{art::classlinker_classes_lock()};
     jclass class_loader_class = env->FindClass("java/lang/ClassLoader");
     std::vector<jobject> class_loaders;
     auto callback = [&](art::mirror::Object* o) {
-        auto r = JNIEnvExt::From(env)->NewLocalRef(reinterpret_cast<art::mirror::Object*>(o));
+        auto r = JNIEnvExt::From(env)->NewLocalRef(o);
         class_loaders.push_back(r);
     };
     MyClassLoaderVisitor v(env, callback);
@@ -263,7 +265,7 @@ Java_io_github_a13e300_tools_NativeUtils_visitClasses(JNIEnv *env, jclass clazz)
     class Visitor : public art::ClassVisitor {
         JNIEnv *env_;
         jmethodID getClassName;
-        bool operator()(art::mirror::ObjPtr<art::mirror::Class> klass) override {
+        bool operator()(art::ObjPtr<art::mirror::Class> klass) override {
             auto ref = JNIEnvExt::From(env_)->NewLocalRef(klass.Ptr());
             auto str = (jstring) env_->CallObjectMethod(ref, getClassName);
             auto chars = env_->GetStringUTFChars(str, nullptr);

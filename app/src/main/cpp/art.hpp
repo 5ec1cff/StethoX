@@ -1,5 +1,6 @@
 #pragma once
 #include "elf_parser.hpp"
+#include <atomic>
 
 #ifndef NDEBUG
 #define ALWAYS_INLINE
@@ -19,6 +20,17 @@
 #define PACKED(x) __attribute__ ((__aligned__(x), __packed__))
 
 namespace art {
+
+    template<class MirrorType>
+    class ObjPtr {
+        uintptr_t reference_;
+
+    public:
+        MirrorType *Ptr() const {
+            return reinterpret_cast<MirrorType*>(reference_);
+        }
+    };
+
     namespace mirror {
 
         class Object {
@@ -29,17 +41,6 @@ namespace art {
         };
 
         class MANAGED Class : public Object {
-        };
-
-        template<class MirrorType>
-        class ObjPtr {
-            uintptr_t reference_;
-
-        public:
-            MirrorType *Ptr() const {
-                return reinterpret_cast<MirrorType*>(reference_);
-            }
-
         };
 
         template<bool kPoisonReferences, class MirrorType>
@@ -176,7 +177,7 @@ namespace art {
     public:
         virtual ~ClassLoaderVisitor() {}
 
-        virtual void Visit(mirror::ClassLoader *class_loader)
+        virtual void Visit(ObjPtr<mirror::ClassLoader> class_loader)
         REQUIRES_SHARED(Locks::classlinker_classes_lock_, Locks::mutator_lock_) = 0;
     };
 
@@ -245,7 +246,7 @@ namespace art {
     public:
         virtual ~ClassVisitor() {};
         // Return true to continue visiting.
-        virtual bool operator()(mirror::ObjPtr<mirror::Class> klass) = 0;
+        virtual bool operator()(ObjPtr<mirror::Class> klass) = 0;
     };
 
     class ClassLinker {
@@ -315,4 +316,253 @@ namespace art {
     };
 
     bool Init(JNIEnv *env, elf_parser::Elf &art);
+
+    enum class CASMode {
+        kStrong,
+        kWeak,
+    };
+
+    template<typename T>
+    class PACKED(sizeof(T)) Atomic : public std::atomic<T> {
+    public:
+        Atomic<T>() : std::atomic<T>(T()) { }
+
+        explicit Atomic<T>(T value) : std::atomic<T>(value) { }
+
+        // Load data from an atomic variable with Java data memory order semantics.
+        //
+        // Promises memory access semantics of ordinary Java data.
+        // Does not order other memory accesses.
+        // Long and double accesses may be performed 32 bits at a time.
+        // There are no "cache coherence" guarantees; e.g. loads from the same location may be reordered.
+        // In contrast to normal C++ accesses, racing accesses are allowed.
+        T LoadJavaData() const {
+            return this->load(std::memory_order_relaxed);
+        }
+
+        // Store data in an atomic variable with Java data memory ordering semantics.
+        //
+        // Promises memory access semantics of ordinary Java data.
+        // Does not order other memory accesses.
+        // Long and double accesses may be performed 32 bits at a time.
+        // There are no "cache coherence" guarantees; e.g. loads from the same location may be reordered.
+        // In contrast to normal C++ accesses, racing accesses are allowed.
+        void StoreJavaData(T desired_value) {
+            this->store(desired_value, std::memory_order_relaxed);
+        }
+
+        // Atomically replace the value with desired_value if it matches the expected_value.
+        // Participates in total ordering of atomic operations.
+        bool CompareAndSetStrongSequentiallyConsistent(T expected_value, T desired_value) {
+            return this->compare_exchange_strong(expected_value, desired_value, std::memory_order_seq_cst);
+        }
+
+        // The same, except it may fail spuriously.
+        bool CompareAndSetWeakSequentiallyConsistent(T expected_value, T desired_value) {
+            return this->compare_exchange_weak(expected_value, desired_value, std::memory_order_seq_cst);
+        }
+
+        // Atomically replace the value with desired_value if it matches the expected_value. Doesn't
+        // imply ordering or synchronization constraints.
+        bool CompareAndSetStrongRelaxed(T expected_value, T desired_value) {
+            return this->compare_exchange_strong(expected_value, desired_value, std::memory_order_relaxed);
+        }
+
+        // Atomically replace the value with desired_value if it matches the expected_value. Prior writes
+        // to other memory locations become visible to the threads that do a consume or an acquire on the
+        // same location.
+        bool CompareAndSetStrongRelease(T expected_value, T desired_value) {
+            return this->compare_exchange_strong(expected_value, desired_value, std::memory_order_release);
+        }
+
+        // The same, except it may fail spuriously.
+        bool CompareAndSetWeakRelaxed(T expected_value, T desired_value) {
+            return this->compare_exchange_weak(expected_value, desired_value, std::memory_order_relaxed);
+        }
+
+        // Atomically replace the value with desired_value if it matches the expected_value. Prior writes
+        // made to other memory locations by the thread that did the release become visible in this
+        // thread.
+        bool CompareAndSetWeakAcquire(T expected_value, T desired_value) {
+            return this->compare_exchange_weak(expected_value, desired_value, std::memory_order_acquire);
+        }
+
+        // Atomically replace the value with desired_value if it matches the expected_value. Prior writes
+        // to other memory locations become visible to the threads that do a consume or an acquire on the
+        // same location.
+        bool CompareAndSetWeakRelease(T expected_value, T desired_value) {
+            return this->compare_exchange_weak(expected_value, desired_value, std::memory_order_release);
+        }
+
+        // Atomically replace the value with desired_value if it matches the expected_value.
+        // Participates in total ordering of atomic operations.
+        // Returns the existing value before the exchange. In other words, if the returned value is the
+        // same as expected_value, as passed to this method, the exchange has completed successfully.
+        // Otherwise the value was left unchanged.
+        T CompareAndExchangeStrongSequentiallyConsistent(T expected_value, T desired_value) {
+            // compare_exchange_strong() modifies expected_value if the actual value found is different from
+            // what was expected. In other words expected_value is changed if compare_exchange_strong
+            // returns false.
+            this->compare_exchange_strong(expected_value, desired_value, std::memory_order_seq_cst);
+            return expected_value;
+        }
+
+        bool CompareAndSet(T expected_value,
+                           T desired_value,
+                           CASMode mode,
+                           std::memory_order memory_order) {
+            return mode == CASMode::kStrong
+                   ? this->compare_exchange_strong(expected_value, desired_value, memory_order)
+                   : this->compare_exchange_weak(expected_value, desired_value, memory_order);
+        }
+
+        // Returns the address of the current atomic variable. This is only used by futex() which is
+        // declared to take a volatile address (see base/mutex-inl.h).
+        volatile T* Address() {
+            return reinterpret_cast<T*>(this);
+        }
+
+        static T MaxValue() {
+            return std::numeric_limits<T>::max();
+        }
+    };
+
+    enum class ThreadState : uint8_t {
+        kTerminated = 66,                 // TERMINATED     TS_ZOMBIE    Thread.run has returned, but Thread* still around
+        kRunnable = 0,                    // RUNNABLE       TS_RUNNING   runnable
+        kObsoleteRunnable = 67,           // ---            ---          obsolete value
+        kTimedWaiting = 68,               // TIMED_WAITING  TS_WAIT      in Object.wait() with a timeout
+    };
+
+    class StateAndFlags {
+    public:
+        explicit StateAndFlags(uint32_t value) :value_(value) {}
+
+        uint32_t GetValue() const {
+            return value_;
+        }
+
+        void SetValue(uint32_t value) {
+            value_ = value;
+        }
+
+        ThreadState GetState() const {
+            ThreadState state = static_cast<ThreadState>((value_ >> 24) & 0xff);
+            return state;
+        }
+
+        void SetState(ThreadState state) {
+            value_ = (static_cast<uint32_t>(state) << 24) | (value_ & ~0xff);
+        }
+
+        StateAndFlags WithState(ThreadState state) const {
+            StateAndFlags result = *this;
+            result.SetState(state);
+            return result;
+        }
+
+        // The value holds thread flags and thread state.
+        uint32_t value_;
+    };
+
+    class Thread {
+    public:
+        static Thread* Current();
+        static bool Init(elf_parser::Elf& art);
+
+        Atomic<uint32_t> state_and_flags;
+
+        void TransitionFromSuspendedToRunnable();
+
+        void TransitionFromRunnableToSuspended(ThreadState new_state);
+
+        inline StateAndFlags GetStateAndFlags(std::memory_order order) const {
+            return StateAndFlags(state_and_flags.load(order));
+        }
+
+        inline ThreadState GetState() const {
+            return GetStateAndFlags(std::memory_order_relaxed).GetState();
+        }
+
+        inline ThreadState SetState(ThreadState new_state) {
+            while (true) {
+                StateAndFlags old_state_and_flags = GetStateAndFlags(std::memory_order_relaxed);
+                StateAndFlags new_state_and_flags = old_state_and_flags.WithState(new_state);
+                bool done =
+                    state_and_flags.CompareAndSetWeakRelaxed(old_state_and_flags.GetValue(),
+                                                             new_state_and_flags.GetValue());
+                if (done) {
+                    return static_cast<ThreadState>(old_state_and_flags.GetState());
+                }
+            }
+        }
+    };
+
+    class ReaderWriterMutex {
+    public:
+        static bool Init(elf_parser::Elf& art);
+        void SharedLock(Thread* self);
+        void SharedUnlock(Thread* self);
+    };
+
+    class ReaderMutexLock {
+        ReaderWriterMutex* mu_;
+        Thread* self_;
+
+    public:
+        ReaderMutexLock(ReaderWriterMutex* mu): mu_(mu), self_(Thread::Current()) {
+            if (mu_) mu_->SharedLock(self_);
+        }
+
+        ~ReaderMutexLock() {
+            if (mu_) mu_->SharedUnlock(self_);
+        }
+    };
+
+    ReaderWriterMutex* classlinker_classes_lock();
+
+    class ScopedThreadStateChange {
+        Thread* self_ = nullptr;
+        const ThreadState thread_state_ = ThreadState::kTerminated;
+        ThreadState old_thread_state_ = ThreadState::kTerminated;
+        const bool expected_has_no_thread_ = true;
+    public:
+        ALWAYS_INLINE ScopedThreadStateChange(Thread* self, ThreadState new_thread_state): self_(self), thread_state_(new_thread_state), expected_has_no_thread_(false)  {
+            old_thread_state_ = self->GetState();
+            if (old_thread_state_ != new_thread_state) {
+                if (new_thread_state == ThreadState::kRunnable) {
+                    self_->TransitionFromSuspendedToRunnable();
+                } else if (old_thread_state_ == ThreadState::kRunnable) {
+                    self_->TransitionFromRunnableToSuspended(new_thread_state);
+                } else {
+                    // A transition between suspended states.
+                    self_->SetState(new_thread_state);
+                }
+            }
+        }
+
+        ALWAYS_INLINE ~ScopedThreadStateChange() {
+            if (old_thread_state_ != thread_state_) {
+                if (old_thread_state_ == ThreadState::kRunnable) {
+                    self_->TransitionFromSuspendedToRunnable();
+                } else if (thread_state_ == ThreadState::kRunnable) {
+                    self_->TransitionFromRunnableToSuspended(old_thread_state_);
+                } else {
+                    // A transition between suspended states.
+                    self_->SetState(old_thread_state_);
+                }
+            }
+        }
+
+        ALWAYS_INLINE Thread* Self() const {
+            return self_;
+        }
+    };
+
+    class ScopedObjectAccess : ScopedThreadStateChange {
+    public:
+        ALWAYS_INLINE ScopedObjectAccess() : ScopedThreadStateChange(Thread::Current(), ThreadState::kRunnable) {}
+
+        ~ScopedObjectAccess() = default;
+    };
 }
