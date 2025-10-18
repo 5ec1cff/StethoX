@@ -82,7 +82,11 @@ Agent_OnAttach(JavaVM* vm, char *options, void *reserved) {
     vm->GetEnv(reinterpret_cast<void **>(&gJvmtiEnv), kArtTiVersion);
     jvmtiCapabilities cap{};
     cap.can_tag_objects = true;
-    cap.can_access_local_variables = true;
+    // 这个 cap 是给 getFrameVarsNative 用的，但是
+    // openjdkjvmti::EventHandler::HandleLocalAccessCapabilityAdded 会调用 ReinitializeMethodsCode / InitializeMethodsCode
+    // 因此方法入口会被替换成解释器导致 hook 失效
+    // 考虑到 getFrameVarsNative 效果不是很好，因此这个 cap 也暂时没必要使用
+    // cap.can_access_local_variables = true;
     auto r = gJvmtiEnv->AddCapabilities(&cap);
     if (r) {
         LOGD("addCapabilities: %s", to_string(r).c_str());
