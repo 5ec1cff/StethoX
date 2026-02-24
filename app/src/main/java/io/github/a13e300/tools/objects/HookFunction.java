@@ -418,11 +418,93 @@ public class HookFunction extends BaseFunction {
         var realArgs = new Object[args.length + 1];
         System.arraycopy(args, 0, realArgs, 0, args.length);
     private UnhookFunction traceInternal(Context cx, Scriptable scope, Object[] args, Function funObj, boolean stack, boolean asyncTrace) {
+        var arrLen = args.length;
+        NativeObject config = null;
+        if (arrLen > 0) {
+            var last = args[arrLen - 1];
+            if (last instanceof NativeObject && !(last instanceof Wrapper)) {
+                config = (NativeObject) last;
+                arrLen -= 1;
+            }
+        }
+        Function cond = null;
+        Function preCond = null;
+        if (config != null) {
+            var condV = config.get("cond");
+            if (condV instanceof Function) {
+                cond = (Function) condV;
+            } else if (condV != null) {
+                throw new IllegalArgumentException("invalid cond");
+            }
+
+            var preCondV = config.get("preCond");
+            if (preCondV instanceof Function) {
+                preCond = (Function) preCondV;
+            } else {
+                if (preCondV != null) {
+                    throw new IllegalArgumentException("invalid preCond");
+                }
+            }
+        }
+
+        final Function condF = cond;
+        final Function preCondF = preCond;
+
+        var realArgs = new Object[arrLen + 1];
+        System.arraycopy(args, 0, realArgs, 0, arrLen);
         var console = JsConsole.fromScope(scope);
         var counter = new AtomicInteger(0);
         realArgs[realArgs.length - 1] = new XC_MethodHook() {
             @Override
+            protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                if (preCondF == null) return;
+                var p = new HookParam(scope);
+                p.setParam(param);
+                var context = enterJsContext();
+                boolean ret = true;
+                try {
+                    var r = preCondF.call(context, scope, null, new Object[]{p});
+                    if (!(r instanceof Boolean)) {
+                        JsConsole.fromScope(scope).error("preCond didn't return boolean!", r);
+                    } else {
+                        ret = (Boolean) r;
+                    }
+                } catch (Throwable t) {
+                    JsConsole.fromScope(scope).error("error occurred in preCond of " + param.method, t);
+                } finally {
+                    Context.exit();
+                }
+                if (!ret) {
+                    param.setObjectExtra("skip", Boolean.TRUE);
+                }
+            }
+
+            @Override
             protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                if (preCondF != null && param.getObjectExtra("skip") == Boolean.TRUE) {
+                    return;
+                }
+                if (condF != null) {
+                    var p = new HookParam(scope);
+                    p.setParam(param);
+                    var context = enterJsContext();
+                    boolean ret = true;
+                    try {
+                        var r = condF.call(context, scope, null, new Object[]{p});
+                        if (!(r instanceof Boolean)) {
+                            JsConsole.fromScope(scope).error("cond didn't return boolean!", r);
+                        } else {
+                            ret = (Boolean) r;
+                        }
+                    } catch (Throwable t) {
+                        JsConsole.fromScope(scope).error("error occurred in cond of " + param.method, t);
+                    } finally {
+                        Context.exit();
+                    }
+                    if (!ret) {
+                        return;
+                    }
+                }
                 var count = counter.incrementAndGet();
                 try {
                     console.info(count, "method", param.method);
