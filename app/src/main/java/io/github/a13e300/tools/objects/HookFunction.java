@@ -231,6 +231,9 @@ public class HookFunction extends BaseFunction {
         var console = JsConsole.fromScope(scope);
         var unhooks = new ArrayList<XC_MethodHook.Unhook>();
         hookMembers.forEach((member) -> {
+            if (Modifier.isAbstract(member.getModifiers()) || Modifier.isInterface(member.getModifiers())) {
+                return;
+            }
             var oldHook = mHooks.get(member);
             if (oldHook != null) {
                 console.log("remove old hook of", member);
