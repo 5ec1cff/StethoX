@@ -10,12 +10,14 @@ import org.mozilla.javascript.annotations.JSFunction;
 import java.util.List;
 
 import de.robv.android.xposed.XC_MethodHook;
+import io.github.a13e300.tools.AsyncTraceKt;
 
 public class UnhookFunction extends ScriptableObject {
     public UnhookFunction() {
     }
 
     List<XC_MethodHook.Unhook> mUnhooks;
+    private boolean isAsyncTrace;
 
     public UnhookFunction(Scriptable scope) {
         setParentScope(scope);
@@ -26,8 +28,14 @@ public class UnhookFunction extends ScriptableObject {
         }
     }
 
-    void setUnhooks(List<XC_MethodHook.Unhook> unhooks) {
+    void setUnhooks(List<XC_MethodHook.Unhook> unhooks, boolean isAsyncTrace) {
         mUnhooks = unhooks;
+        synchronized (this) {
+            if (isAsyncTrace) {
+                this.isAsyncTrace = isAsyncTrace;
+                AsyncTraceKt.enterAsyncTrace();
+            }
+        }
     }
 
     @Override
@@ -48,12 +56,24 @@ public class UnhookFunction extends ScriptableObject {
         return sb.toString();
     }
 
+    private void unhook() {
+        synchronized (this) {
+            if (mUnhooks == null) {
+                return;
+            }
+            if (isAsyncTrace) {
+                AsyncTraceKt.exitAsyncTrace();
+            }
+            for (var m : mUnhooks) {
+                m.unhook();
+            }
+            mUnhooks = null;
+        }
+    }
+
     @JSFunction
     public static void unhook(Context cx, Scriptable thisObj, Object[] args, Function funObj) {
         var f = (UnhookFunction) thisObj;
-        for (var m: f.mUnhooks) {
-            m.unhook();
-        }
-        f.mUnhooks = null;
+        f.unhook();
     }
 }

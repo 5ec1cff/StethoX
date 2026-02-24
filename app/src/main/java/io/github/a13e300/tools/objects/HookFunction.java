@@ -9,6 +9,7 @@ import com.facebook.stetho.rhino.JsConsole;
 import org.mozilla.javascript.BaseFunction;
 import org.mozilla.javascript.Context;
 import org.mozilla.javascript.Function;
+import org.mozilla.javascript.NativeObject;
 import org.mozilla.javascript.ScriptRuntime;
 import org.mozilla.javascript.Scriptable;
 import org.mozilla.javascript.Wrapper;
@@ -30,9 +31,13 @@ import java.util.stream.Collectors;
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XC_MethodReplacement;
 import de.robv.android.xposed.XposedBridge;
+import io.github.a13e300.tools.AsyncTraceKt;
+import io.github.a13e300.tools.FindObjectConfiguration;
 import io.github.a13e300.tools.NativeUtils;
+import io.github.a13e300.tools.ObjectScannerKt;
 import io.github.a13e300.tools.StethoxAppInterceptor;
 import io.github.a13e300.tools.Utils;
+import kotlin.jvm.functions.Function1;
 
 public class HookFunction extends BaseFunction {
     /**
@@ -70,10 +75,10 @@ public class HookFunction extends BaseFunction {
 
     @Override
     public Object call(Context cx, Scriptable scope, Scriptable thisObj, Object[] args) {
-        return hook(cx, scope, args);
+        return hook(cx, scope, args, false);
     }
 
-    private UnhookFunction hook(Context cx, Scriptable scope, Object[] args) {
+    private UnhookFunction hook(Context cx, Scriptable scope, Object[] args, boolean isAsyncTrace) {
         if (args.length == 0) return null;
         var first = args[0];
         if (first instanceof Wrapper) first = ((Wrapper) first).unwrap();
@@ -237,7 +242,7 @@ public class HookFunction extends BaseFunction {
             console.log("hooked", member);
         });
         var unhook = new UnhookFunction(scope);
-        unhook.setUnhooks(unhooks);
+        unhook.setUnhooks(unhooks, isAsyncTrace);
         return unhook;
     }
 
@@ -393,17 +398,23 @@ public class HookFunction extends BaseFunction {
 
     @JSFunction
     public static Object trace(Context cx, Scriptable thisObj, Object[] args, Function funObj) {
-        return ((HookFunction) thisObj).traceInternal(cx, thisObj.getParentScope(), args, funObj, false);
+        return ((HookFunction) thisObj).traceInternal(cx, thisObj.getParentScope(), args, funObj, false, false);
     }
 
     @JSFunction
     public static Object traces(Context cx, Scriptable thisObj, Object[] args, Function funObj) {
-        return ((HookFunction) thisObj).traceInternal(cx, thisObj.getParentScope(), args, funObj, true);
+        return ((HookFunction) thisObj).traceInternal(cx, thisObj.getParentScope(), args, funObj, true, false);
+    }
+
+    @JSFunction
+    public static Object atraces(Context cx, Scriptable thisObj, Object[] args, Function funObj) {
+        return ((HookFunction) thisObj).traceInternal(cx, thisObj.getParentScope(), args, funObj, true, true);
     }
 
     private UnhookFunction traceInternal(Context cx, Scriptable scope, Object[] args, Function funObj, boolean stack) {
         var realArgs = new Object[args.length + 1];
         System.arraycopy(args, 0, realArgs, 0, args.length);
+    private UnhookFunction traceInternal(Context cx, Scriptable scope, Object[] args, Function funObj, boolean stack, boolean asyncTrace) {
         var console = JsConsole.fromScope(scope);
         var counter = new AtomicInteger(0);
         realArgs[realArgs.length - 1] = new XC_MethodHook() {
@@ -427,14 +438,18 @@ public class HookFunction extends BaseFunction {
                         }
                     }
                     if (stack) {
-                        console.info(Utils.getStackTrace(false));
+                        var trace = Utils.getStackTrace(false);
+                        if (asyncTrace) {
+                            trace += AsyncTraceKt.asyncStackTrace();
+                        }
+                        console.info(trace);
                     }
                 } catch (Throwable t) {
                     console.error("error occurred while tracing", t);
                 }
             }
         };
-        var unhook = hook(cx, scope, realArgs);
+        var unhook = hook(cx, scope, realArgs, asyncTrace);
         console.info("start tracing " + unhook.mUnhooks.size() + " methods (stackTrace=" + stack + ")");
         return unhook;
     }
