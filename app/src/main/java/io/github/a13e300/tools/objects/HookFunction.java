@@ -414,9 +414,6 @@ public class HookFunction extends BaseFunction {
         return ((HookFunction) thisObj).traceInternal(cx, thisObj.getParentScope(), args, funObj, true, true);
     }
 
-    private UnhookFunction traceInternal(Context cx, Scriptable scope, Object[] args, Function funObj, boolean stack) {
-        var realArgs = new Object[args.length + 1];
-        System.arraycopy(args, 0, realArgs, 0, args.length);
     private UnhookFunction traceInternal(Context cx, Scriptable scope, Object[] args, Function funObj, boolean stack, boolean asyncTrace) {
         var arrLen = args.length;
         NativeObject config = null;
@@ -635,5 +632,112 @@ public class HookFunction extends BaseFunction {
             }
         }
         return null;
+    }
+
+    @JSFunction
+    public static Object diff(Context cx, Scriptable thisObj, Object[] args, Function funObj) throws Throwable {
+        if (args.length != 3) {
+            throw new IllegalArgumentException("Usage: a, b, maxLevel");
+        }
+        var a = args[0];
+        if (a instanceof Wrapper) a = ((Wrapper) a).unwrap();
+        var b = args[1];
+        if (b instanceof Wrapper) b = ((Wrapper) b).unwrap();
+        var maxLevelV = args[2];
+        int maxLevel;
+        if (maxLevelV instanceof Number) {
+            maxLevel = ((Number) maxLevelV).intValue();
+        } else {
+            throw new IllegalArgumentException("invalid max level");
+        }
+        ObjectScannerKt.diffObjectOnConsole(a, b, maxLevel, thisObj.getParentScope());
+        return null;
+    }
+
+    @JSFunction
+    public static Object findPathToObject(Context cx, Scriptable thisObj, Object[] args, Function funObj) throws Throwable {
+        if (args.length != 2) {
+            throw new IllegalArgumentException("Usage: obj, { maxTries, maxDepth, object, class, cond(obj) -> boolean {} }");
+        }
+        int maxDepth = Integer.MAX_VALUE;
+        int maxTries = Integer.MAX_VALUE;
+        Object targetObj = null;
+        Class<?> targetClass = null;
+        Function condFunc;
+        var startObject = args[0];
+        if (startObject instanceof Wrapper) {
+            startObject = ((Wrapper) startObject).unwrap();
+        }
+        if (startObject == null) {
+            throw new NullPointerException("startObject is null!");
+        }
+        if (args[1] instanceof NativeObject) {
+            var o = (NativeObject) args[1];
+            var maxDepthV = o.get("maxDepth");
+            if (maxDepthV instanceof Number) {
+                maxDepth = ((Number) maxDepthV).intValue();
+            } else if (maxDepthV != null) {
+                throw new IllegalArgumentException("maxDepth " + maxDepthV + " (class=" + maxDepthV.getClass() + ")");
+            }
+
+            var maxTriesV = o.get("maxTries");
+            if (maxTriesV instanceof Number) {
+                maxTries = ((Number) maxTriesV).intValue();
+            } else if (maxTriesV != null) {
+                throw new IllegalArgumentException("maxTries " + maxDepthV + " (class=" + maxTriesV.getClass() + ")");
+            }
+
+            var obj = o.get("object");
+            if (obj != null) {
+                if (obj instanceof Wrapper) {
+                    obj = ((Wrapper) obj).unwrap();
+                }
+            }
+            targetObj = obj;
+
+            var clz = o.get("class");
+            if (clz != null) {
+                if (clz instanceof Wrapper) {
+                    clz = ((Wrapper) clz).unwrap();
+                }
+            }
+            if (clz != null && !(clz instanceof Class<?>)) {
+                throw new IllegalArgumentException("class " + clz + " (class=" + clz.getClass() + ")");
+            }
+            targetClass = (Class<?>) clz;
+
+            var fn = o.get("cond");
+            if (fn instanceof Function) {
+                condFunc = (Function) fn;
+            } else {
+                condFunc = null;
+                if (fn != null) {
+                    throw new IllegalArgumentException("condFunc " + fn + " (class=" + fn.getClass() + ")");
+                }
+            }
+        } else {
+            condFunc = null;
+        }
+        if (targetObj == null && targetClass == null && condFunc == null) {
+            throw new IllegalArgumentException("one of object, class, cond should be specified");
+        }
+        var conf = new FindObjectConfiguration(
+                condFunc != null ? new Function1<>() {
+
+                    @Override
+                    public Boolean invoke(Object o) {
+                        var result = condFunc.call(cx, thisObj.getParentScope(), null, new Object[]{o});
+                        if (result instanceof Boolean) {
+                            return (Boolean) result;
+                        }
+                        throw new IllegalStateException("invalid return value from cond func " + result + " (type=" + (result == null ? null : result.getClass()) + ")");
+                    }
+                } : null,
+                maxDepth,
+                maxTries,
+                targetObj,
+                targetClass
+        );
+        return ObjectScannerKt.findPathToObject(args[0], conf);
     }
 }
