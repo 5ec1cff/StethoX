@@ -1,11 +1,14 @@
 package io.github.a13e300.tools
 
 import android.os.Handler
+import android.os.Looper
 import android.os.Message
 import android.os.MessageQueue
 import de.robv.android.xposed.XC_MethodHook
+import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import io.github.a13e300.tools.utils.ConcurrentIdentityWeakHashMap
+import java.lang.reflect.Member
 import java.util.Stack
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.atomic.AtomicInteger
@@ -56,9 +59,27 @@ fun asyncStackTrace() = StringBuilder().apply {
     }
 }.toString()
 
+private val deopt by lazy {
+    runCatching {
+        XposedBridge::class.java.getDeclaredMethod("deoptimizeMethod", Member::class.java)
+    }.onFailure {
+        Logger.e("find deoptimizeMethod")
+    }.getOrNull()
+}
+
+fun deoptimizeAll(clz: Class<*>, name: String) {
+    clz.declaredMethods.forEach {
+        if (it.name == name) {
+            deopt?.invoke(null, it)
+            Logger.d("deoptimized $it")
+        }
+    }
+}
+
 fun installAsyncTraceHook() {
     synchronized (hookLock) {
         if (isHooked) {
+            Logger.d("repeatedly install async trace hook?")
             return
         }
 
@@ -244,6 +265,16 @@ fun installAsyncTraceHook() {
                     }
                 }
             ))
+
+            deoptimizeAll(Looper::class.java, "loop")
+            deoptimizeAll(Looper::class.java, "loopOnce")
+            deoptimizeAll(Handler::class.java, "post")
+            deoptimizeAll(Handler::class.java, "postDelayed")
+            deoptimizeAll(Handler::class.java, "postAtTime")
+            deoptimizeAll(Handler::class.java, "sendMessageAtTime")
+            deoptimizeAll(Handler::class.java, "sendMessageDelayed")
+            deoptimizeAll(Handler::class.java, "enqueueMessage")
+            Logger.d("async hook installed")
         }.onFailure {
             Logger.e("install async trace hook")
         }
