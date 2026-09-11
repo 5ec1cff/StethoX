@@ -2,16 +2,19 @@ package io.github.a13e300.tools;
 
 import android.app.Activity;
 import android.app.ActivityThread;
+import android.util.Log;
 
 import org.mozilla.javascript.Context;
 import org.mozilla.javascript.ScriptableObject;
 
 import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Member;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
 import io.github.a13e300.tools.node.Node;
 
@@ -133,5 +136,27 @@ public class Utils {
         }
 
         return jsContext;
+    }
+
+    private final static Method deoptimizeMethodMetod;
+
+    static {
+        Method m = null;
+        try {
+            m = XposedBridge.class.getDeclaredMethod("deoptimizeMethod", Member.class);
+        } catch (NoSuchMethodException e) {
+            Log.e("StethoX", "no deoptimizeMethod found");
+        }
+        deoptimizeMethodMetod = m;
+    }
+
+    public static void deoptimizeMethod(Member m) {
+        if (deoptimizeMethodMetod != null) {
+            try {
+                deoptimizeMethodMetod.invoke(null, m);
+            } catch (IllegalAccessException | InvocationTargetException e) {
+                throw new RuntimeException(e);
+            }
+        }
     }
 }

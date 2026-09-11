@@ -565,4 +565,11 @@ namespace art {
 
         ~ScopedObjectAccess() = default;
     };
+
+    class ArtMethod {
+    public:
+        static bool Init(JNIEnv *env);
+        static ArtMethod *FromJMethod(JNIEnv *env, jclass clz, jmethodID method, bool isStatic);
+        void *&NativeEntry();
+    };
 }

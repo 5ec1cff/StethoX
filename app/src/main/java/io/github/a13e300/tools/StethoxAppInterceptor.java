@@ -137,6 +137,19 @@ public class StethoxAppInterceptor implements IXposedHookLoadPackage {
         } catch (Throwable t) {
             Logger.e("failed to get classloader for context", t);
         }
+        Logger.d("installing icc");
+        Stetho.icc = new Stetho.InternalCodeCallback() {
+            @Override
+            public void preRun() {
+                Logger.d("mark thread " + Thread.currentThread().getId() + " ignore");
+                StringTrace.markStringTraceIgnore(true);
+            }
+
+            @Override
+            public void postRun() {
+                StringTrace.markStringTraceIgnore(false);
+            }
+        };
         Stetho.initialize(Stetho.newInitializerBuilder(context)
                 .enableWebKitInspector(
                         () -> new Stetho.DefaultInspectorModulesBuilder(context).runtimeRepl(
@@ -203,6 +216,7 @@ public class StethoxAppInterceptor implements IXposedHookLoadPackage {
                                             ((HookFunction) ScriptableObject.getProperty(scope, "hook")).clearHooks();
                                             ((OkHttpInterceptorObject) ScriptableObject.getProperty(scope, "okhttp3")).stop(true);
                                         })
+                                        .importClass(StringTrace.class)
                                         // .importClass(DexUtils.class)
                                         // .importClass(StethoOkHttp3ProxyInterceptor.class)
                                         // .importClass(MutableNameMap.class)

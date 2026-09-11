@@ -43,7 +43,7 @@ android {
         versionName = "1.0.2"
         externalNativeBuild {
             cmake {
-                cppFlags("-std=c++20", "-fno-rtti", "-fno-exceptions")
+                cppFlags("-std=c++23", "-fno-rtti", "-fno-exceptions")
                 arguments += "-DANDROID_STL=none"
             }
         }
@@ -57,8 +57,8 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
     }
     externalNativeBuild {
         cmake {
@@ -67,7 +67,7 @@ android {
         }
     }
     kotlinOptions {
-        jvmTarget = "11"
+        jvmTarget = "21"
     }
 }
 

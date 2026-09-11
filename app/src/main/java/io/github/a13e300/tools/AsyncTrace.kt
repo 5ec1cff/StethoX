@@ -288,6 +288,7 @@ fun installAsyncTraceHook() {
 }
 
 fun uninstallAsyncTraceHook() {
+    Logger.d("async hook uninstalled")
     synchronized(hookLock) {
         if (!isHooked) {
             return

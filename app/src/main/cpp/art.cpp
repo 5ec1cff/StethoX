@@ -9,6 +9,7 @@
 #include <string>
 #include <memory>
 #include <array>
+#include <algorithm>
 #include "art.hpp"
 #include <linux/futex.h>
 #include <sys/syscall.h>
@@ -415,6 +416,51 @@ namespace art {
     ReaderWriterMutex* classlinker_classes_lock() {
         return classlinker_class_lock_ptr ? *classlinker_class_lock_ptr : nullptr;
     }
+
+    size_t native_entry_off{0};
+    jfieldID artMethodField{nullptr};
+
+    ArtMethod *ArtMethod::FromJMethod(JNIEnv *env, jclass clz, jmethodID method, bool isStatic) {
+        auto reflected = env->ToReflectedMethod(clz, method, isStatic);
+        auto artMethod = env->GetLongField(reflected, artMethodField);
+        env->DeleteLocalRef(reflected);
+        return reinterpret_cast<ArtMethod *>(artMethod);
+    }
+
+    bool ArtMethod::Init(JNIEnv *env) {
+        auto executable = env->FindClass("java/lang/reflect/Executable");
+        auto f = env->GetFieldID(executable, "artMethod", "J");
+        if (!f) {
+            LOGE("no Executable::artMethod found");
+            return false;
+        }
+        artMethodField = f;
+
+        auto throwable = env->FindClass("java/lang/Throwable");
+        auto clzclz = env->FindClass("java/lang/Class");
+        auto getDeclaredConstructors = env->GetMethodID(clzclz, "getDeclaredConstructors",
+                                                        "()[Ljava/lang/reflect/Constructor;");
+        auto constructors = (jobjectArray) env->CallObjectMethod(throwable, getDeclaredConstructors);
+        if (env->GetArrayLength(constructors) < 2) {
+            LOGE("THrowable constructors count < 2");
+            return false;
+        }
+
+        auto c1 = env->GetObjectArrayElement(constructors, 0);
+        auto c2 = env->GetObjectArrayElement(constructors, 1);
+
+        auto a1 = env->GetLongField(c1, f);
+        auto a2 = env->GetLongField(c2, f);
+        auto art_method_size = a2 - a1;
+        native_entry_off = art_method_size - 2 * sizeof(void *);
+        LOGD("artMethodSize %zu nativeEntryOff %zu", art_method_size, native_entry_off);
+        return true;
+    }
+
+    void *&ArtMethod::NativeEntry() {
+        return *reinterpret_cast<void **>(reinterpret_cast<uintptr_t>(this) + native_entry_off);
+    }
+
 }
 
 extern "C"
