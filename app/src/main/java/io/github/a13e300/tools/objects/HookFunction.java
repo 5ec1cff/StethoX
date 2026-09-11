@@ -16,6 +16,7 @@ import org.mozilla.javascript.Wrapper;
 import org.mozilla.javascript.annotations.JSFunction;
 
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Executable;
 import java.lang.reflect.Member;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
@@ -534,6 +535,125 @@ public class HookFunction extends BaseFunction {
         var unhook = hook(cx, scope, realArgs, asyncTrace);
         console.info("start tracing " + unhook.mUnhooks.size() + " methods (stackTrace=" + stack + ")");
         return unhook;
+    }
+
+    @JSFunction
+    public static Object hookCoroutine(Context cx, Scriptable thisObj, Object[] args, Function funObj) {
+        return ((HookFunction) thisObj).hookCoroutine(cx, thisObj.getParentScope(), args);
+    }
+
+    private UnhookFunction hookCoroutine(Context cx, Scriptable scope, Object[] args) {
+        if (args.length <= 0 || args.length > 2) {
+            throw new IllegalArgumentException("usage: hookCoroutine(class, { start: \"<init>\", invokeSuspend: \"invokeSuspend\", name })");
+        }
+        Class<?> clazz = null;
+        var clz = args[0];
+        if (clz instanceof Wrapper) {
+            clz = ((Wrapper) clz).unwrap();
+        }
+        if (clz instanceof String) {
+            try {
+                clazz = getClassLoader().loadClass((String) clz);
+            } catch (ClassNotFoundException e) {
+                throw new RuntimeException(e);
+            }
+        } else if (clz instanceof Class<?>) {
+            clazz = (Class<?>) clz;
+        }
+        Executable startMethod = null, invokeSuspendMethod = null;
+        String startName = null, invokeSuspendName = null, traceName = null;
+        if (args.length >= 2) {
+            var obj = args[1];
+            if (obj instanceof NativeObject && !(obj instanceof Wrapper)) {
+                var nObj = (NativeObject) obj;
+                var v = nObj.get("start");
+                if (v != null) {
+                    if (v instanceof Wrapper) {
+                        v = ((Wrapper) v).unwrap();
+                    }
+                    if (v instanceof Executable) {
+                        startMethod = (Executable) v;
+                    } else {
+                        startName = v.toString();
+                    }
+                }
+                v = nObj.get("invokeSuspend");
+                if (v != null) {
+                    if (v instanceof Wrapper) {
+                        v = ((Wrapper) v).unwrap();
+                    }
+                    if (v instanceof Executable) {
+                        invokeSuspendMethod = (Executable) v;
+                    } else {
+                        invokeSuspendName = v.toString();
+                    }
+                }
+                v = nObj.get("name");
+                if (v != null) {
+                    traceName = v.toString();
+                }
+            }
+        }
+        if (startName == null) startName = "<init>";
+        if (invokeSuspendName == null) invokeSuspendName = "invokeSuspend";
+        if (startMethod == null) {
+            if (clazz == null) throw new IllegalArgumentException("no class to find start method");
+            if ("<init>".equals(startName)) {
+                var cstrs = clazz.getDeclaredConstructors();
+                if (cstrs.length != 1) {
+                    throw new RuntimeException("class " + clazz + " has no exactly 1 constructor!");
+                }
+                startMethod = cstrs[0];
+            } else {
+                var methods = clazz.getDeclaredMethods();
+                Method target = null;
+                for (var m: methods) {
+                    if (invokeSuspendName.equals(m.getName())) {
+                        if (target != null) {
+                            throw new RuntimeException("class " + clazz + " has no exactly 1 start!");
+                        } else {
+                            target = m;
+                        }
+                    }
+                }
+                if (target == null) {
+                    throw new RuntimeException("class " + clazz + " has no invokeSuspend!");
+                }
+                startMethod = target;
+            }
+        }
+        if (invokeSuspendMethod == null) {
+            if (clazz == null) throw new IllegalArgumentException("no class to find invokeSuspend method");
+            var methods = clazz.getDeclaredMethods();
+            Method target = null;
+            for (var m: methods) {
+                if (invokeSuspendName.equals(m.getName())) {
+                    if (target != null) {
+                        throw new RuntimeException("class " + clazz + " has no exactly 1 invokeSuspend!");
+                    } else {
+                        target = m;
+                    }
+                }
+            }
+            if (target == null) {
+                throw new RuntimeException("class " + clazz + " has no invokeSuspend!");
+            }
+            invokeSuspendMethod = target;
+        }
+        if (traceName == null) {
+            if (clazz != null) {
+                traceName = clazz.getName();
+            } else {
+                traceName = startMethod.getDeclaringClass().getName();
+            }
+        }
+        return AsyncTraceKt.hookCoroutineForAsyncTrace(scope, traceName, startMethod, invokeSuspendMethod);
+    }
+
+    @JSFunction
+    public static Object clearCoroutine(Context cx, Scriptable thisObj, Object[] args, Function funObj) {
+        AsyncTraceKt.clearAllCoroutineHooksForAsyncHook();
+        return null;
     }
 
     @JSFunction

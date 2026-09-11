@@ -7,7 +7,10 @@ import android.os.MessageQueue
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
+import io.github.a13e300.tools.objects.UnhookFunction
 import io.github.a13e300.tools.utils.ConcurrentIdentityWeakHashMap
+import org.mozilla.javascript.Scriptable
+import java.lang.reflect.Executable
 import java.lang.reflect.Member
 import java.util.Stack
 import java.util.concurrent.ThreadPoolExecutor
@@ -76,6 +79,12 @@ fun deoptimizeAll(clz: Class<*>, name: String) {
     }
 }
 
+fun addAssociation(key: Any, type: String) {
+    val last = eventStack.lastOrNull()
+    val event = Event(type, prev = last)
+    association[key] = event
+}
+
 fun installAsyncTraceHook() {
     synchronized (hookLock) {
         if (isHooked) {
@@ -93,9 +102,7 @@ fun installAsyncTraceHook() {
                         val msg = param.args[0] as Message
                         val key = msg.callback ?: return
 
-                        val last = eventStack.lastOrNull()
-                        val event = Event("HandlerPostRunnable", prev = last)
-                        association[key] = event
+                        addAssociation(key, "HandlerPostRunnable")
                     }
                 }
             ))
@@ -211,9 +218,7 @@ fun installAsyncTraceHook() {
                 object : XC_MethodHook() {
                     override fun beforeHookedMethod(param: MethodHookParam) {
                         val key = param.args[0] as? Runnable ?: return
-                        val last = eventStack.lastOrNull { it != null }
-                        val event = Event("ThreadPoolExecute", prev = last)
-                        association[key] = event
+                        addAssociation(key, "ThreadPoolExecute")
                     }
                 }
             ))
@@ -294,5 +299,49 @@ fun uninstallAsyncTraceHook() {
         }
         hookList.clear()
         isHooked = false
+    }
+}
+
+val coroutineHooksLock = Any()
+val allCoroutineAsyncTraceUnhooks = mutableListOf<UnhookFunction>()
+
+fun hookCoroutineForAsyncTrace(scope: Scriptable, name: String, coroutineConstructor: Executable, coroutineInvokeSuspend: Executable): UnhookFunction {
+    val hook1 = XposedBridge.hookMethod(coroutineConstructor, object : XC_MethodHook() {
+        override fun beforeHookedMethod(param: MethodHookParam) {
+            addAssociation(param.thisObject, "CoroutineStart[$name]")
+        }
+    })
+    val hook2 = XposedBridge.hookMethod(coroutineInvokeSuspend, object : XC_MethodHook() {
+        override fun beforeHookedMethod(param: MethodHookParam) {
+            val key = param.thisObject
+            if (key != null) {
+                val event = association.remove(key)
+                if (event != null) {
+                    eventStack.push(event)
+                    return
+                }
+            }
+            eventStack.push(null)
+        }
+
+        override fun afterHookedMethod(param: MethodHookParam) {
+            eventStack.pop()
+        }
+    })
+    val hooks = mutableListOf(hook1, hook2)
+    val unhook = UnhookFunction(scope)
+    unhook.setUnhooks(hooks, false)
+    synchronized(coroutineHooksLock) {
+        allCoroutineAsyncTraceUnhooks.add(unhook)
+    }
+    return unhook
+}
+
+fun clearAllCoroutineHooksForAsyncHook() {
+    synchronized(coroutineHooksLock) {
+        allCoroutineAsyncTraceUnhooks.forEach {
+            it.unhook()
+        }
+        allCoroutineAsyncTraceUnhooks.clear()
     }
 }

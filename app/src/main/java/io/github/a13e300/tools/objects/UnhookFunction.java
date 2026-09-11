@@ -28,7 +28,7 @@ public class UnhookFunction extends ScriptableObject {
         }
     }
 
-    void setUnhooks(List<XC_MethodHook.Unhook> unhooks, boolean isAsyncTrace) {
+    public void setUnhooks(List<XC_MethodHook.Unhook> unhooks, boolean isAsyncTrace) {
         mUnhooks = unhooks;
         synchronized (this) {
             if (isAsyncTrace) {
@@ -56,7 +56,7 @@ public class UnhookFunction extends ScriptableObject {
         return sb.toString();
     }
 
-    private void unhook() {
+    public void unhook() {
         synchronized (this) {
             if (mUnhooks == null) {
                 return;
